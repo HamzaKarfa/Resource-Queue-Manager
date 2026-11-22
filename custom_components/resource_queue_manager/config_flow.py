@@ -233,7 +233,28 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict | None = None):
         errors: dict[str, str] = {}
-        if user_input is not None:
+        if user_input is not None and CONF_MAX_ACTIVE not in user_input:
+            # New guided setup: name/resources, then capacity, scheduling,
+            # optional priority settings, recurrence and weighted defaults.
+            name = user_input[CONF_NAME].strip()
+            if not name:
+                errors["base"] = "invalid_name"
+            elif any(e.title == name for e in self.hass.config_entries.async_entries(DOMAIN)):
+                errors["base"] = "name_in_use"
+            elif _overlapping_entities(
+                self.hass, user_input.get(CONF_MONITORED_ENTITIES, [])
+            ):
+                errors["base"] = "entities_in_use_elsewhere"
+            else:
+                self._pending_data = {
+                    CONF_NAME: name,
+                    CONF_MONITORED_ENTITIES: list(
+                        user_input.get(CONF_MONITORED_ENTITIES, [])
+                    ),
+                }
+                return await self.async_step_setup_capacity()
+        elif user_input is not None:
+            # Keep old direct-input API compatible for programmatic/fixture users.
             name = user_input[CONF_NAME].strip()
             if not name:
                 errors["base"] = "invalid_name"
@@ -274,26 +295,6 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=(user_input or {}).get(CONF_NAME, "My queue")): str,
-                vol.Required(
-                    CONF_MAX_ACTIVE,
-                    default=(user_input or {}).get(CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE),
-                ): MAX_ACTIVE_SELECTOR,
-                vol.Required(
-                    CONF_STRATEGY,
-                    default=(user_input or {}).get(CONF_STRATEGY, DEFAULT_STRATEGY),
-                ): strategy_selector(self.hass.config.language),
-                vol.Required(
-                    CONF_CAPACITY_MODE,
-                    default=(user_input or {}).get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE),
-                ): capacity_mode_selector(self.hass.config.language),
-                vol.Required(
-                    CONF_RECURRENCE_MODE,
-                    default=(user_input or {}).get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
-                ): recurrence_mode_selector(self.hass.config.language),
-                vol.Required(
-                    CONF_ALLOCATION_MODE,
-                    default=(user_input or {}).get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
-                ): allocation_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES,
                     default=(user_input or {}).get(CONF_MONITORED_ENTITIES, []),
@@ -301,6 +302,123 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_setup_capacity(self, user_input: dict | None = None):
+        """Guided creation: choose capacity independently of other settings."""
+        errors = {}
+        if user_input is not None:
+            mode = user_input[CONF_CAPACITY_MODE]
+            limit = int(user_input[CONF_MAX_ACTIVE])
+            if not _capacity_configuration_valid(mode, limit):
+                errors["base"] = "invalid_capacity"
+            else:
+                self._pending_data.update({
+                    CONF_CAPACITY_MODE: mode,
+                    CONF_MAX_ACTIVE: limit,
+                })
+                return await self.async_step_setup_scheduling()
+
+        return self.async_show_form(
+            step_id="setup_capacity",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_CAPACITY_MODE,
+                    default=(user_input or {}).get(
+                        CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE
+                    ),
+                ): capacity_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_MAX_ACTIVE,
+                    default=(user_input or {}).get(
+                        CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE
+                    ),
+                ): MAX_ACTIVE_SELECTOR,
+            }),
+            errors=errors,
+        )
+
+    async def async_step_setup_scheduling(self, user_input: dict | None = None):
+        """Guided creation: scheduling and admission in one short screen."""
+        errors = {}
+        if user_input is not None:
+            strategy = user_input[CONF_STRATEGY]
+            allocation = user_input[CONF_ALLOCATION_MODE]
+            if strategy not in PROVIDERS:
+                errors["base"] = "invalid_strategy"
+            elif allocation not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
+            else:
+                self._pending_data.update({
+                    CONF_STRATEGY: strategy,
+                    CONF_ALLOCATION_MODE: allocation,
+                })
+                if get_provider(strategy).config_fields:
+                    return await self.async_step_setup_strategy()
+                self._pending_data[CONF_STRATEGY_CONFIG] = {}
+                return await self.async_step_setup_recurrence()
+
+        return self.async_show_form(
+            step_id="setup_scheduling",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_STRATEGY,
+                    default=(user_input or {}).get(
+                        CONF_STRATEGY, DEFAULT_STRATEGY
+                    ),
+                ): strategy_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_ALLOCATION_MODE,
+                    default=(user_input or {}).get(
+                        CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE
+                    ),
+                ): allocation_mode_selector(self.hass.config.language),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_setup_strategy(self, user_input: dict | None = None):
+        """Show provider settings only if the selected strategy has them."""
+        strategy = self._pending_data[CONF_STRATEGY]
+        errors = {}
+        if user_input is not None:
+            try:
+                config = validate_strategy_config(strategy, user_input)
+            except ValueError:
+                errors["base"] = "invalid_strategy_options"
+            else:
+                self._pending_data[CONF_STRATEGY_CONFIG] = config
+                return await self.async_step_setup_recurrence()
+        return self.async_show_form(
+            step_id="setup_strategy",
+            data_schema=strategy_form_schema(
+                strategy, user_input, self.hass.config.language
+            ),
+            errors=errors,
+        )
+
+    async def async_step_setup_recurrence(self, user_input: dict | None = None):
+        """Last independent policy before any conditional per-entity weights."""
+        errors = {}
+        if user_input is not None:
+            mode = user_input[CONF_RECURRENCE_MODE]
+            if mode not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
+            else:
+                self._pending_data[CONF_RECURRENCE_MODE] = mode
+                return await self._finish_setup()
+
+        return self.async_show_form(
+            step_id="setup_recurrence",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_RECURRENCE_MODE,
+                    default=(user_input or {}).get(
+                        CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE
+                    ),
+                ): recurrence_mode_selector(self.hass.config.language),
+            }),
+            errors=errors,
+        )
 
     async def async_step_strategy(self, user_input: dict | None = None):
         """Configure fields provided by the selected algorithm module."""
@@ -377,7 +495,9 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> "ResourceQueueOptionsFlow":
-        return ResourceQueueOptionsFlow()
+        from .options_sections import SectionedOptionsFlow
+
+        return SectionedOptionsFlow()
 
 
 class ResourceQueueOptionsFlow(OptionsFlowWithReload):
