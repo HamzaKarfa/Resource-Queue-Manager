@@ -53,19 +53,21 @@ def waiting_sensor(hass: HomeAssistant):
 async def test_setup_flow_exposes_recurrence_mode_and_persists_count(hass: HomeAssistant):
     assert await async_setup_component(hass, DOMAIN, {})
     flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    form = flow["data_schema"].schema
-    marker_names = {marker.schema for marker in form}
-    assert "recurrence_mode" in marker_names
+    first = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": "Recurring TTS", "monitored_entities": []}
+    )
+    assert first["step_id"] == "setup_capacity"
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"max_active": 1, "capacity_mode": "classic"}
+    )
+    assert step["step_id"] == "setup_scheduling"
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"strategy": "fifo", "allocation_mode": "strict"}
+    )
+    assert step["step_id"] == "setup_recurrence"
+    assert "recurrence_mode" in {marker.schema for marker in step["data_schema"].schema}
     created = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "Recurring TTS",
-            "max_active": 1,
-            "capacity_mode": "classic",
-            "recurrence_mode": "count",
-            "strategy": "fifo",
-            "monitored_entities": [],
-        },
+        flow["flow_id"], {"recurrence_mode": "count"}
     )
     assert created["type"].value == "create_entry"
     assert created["data"]["recurrence_mode"] == "count"
@@ -134,16 +136,12 @@ async def test_options_cannot_change_mode_with_reservations(hass: HomeAssistant)
     entry = await setup_queue(hass, recurrence_mode="ignore")
     await action(hass, "resume")
     await action(hass, "request", resource_id="busy", entity_id=ENTITIES[0])
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "recurrence"}
+    )
     result = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            "max_active": 1,
-            "capacity_mode": "classic",
-            "recurrence_mode": "count",
-            "strategy": "fifo",
-            "monitored_entities": list(ENTITIES),
-        },
+        flow["flow_id"], {"recurrence_mode": "count"}
     )
     assert result["type"].value == "form"
     assert result["errors"]["base"] == "recurrence_mode_in_use"
@@ -152,16 +150,12 @@ async def test_options_cannot_change_mode_with_reservations(hass: HomeAssistant)
     assert not manager.paused
 
     await action(hass, "release", resource_id="busy")
-    second = await hass.config_entries.options.async_init(entry.entry_id)
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    second = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "recurrence"}
+    )
     updated = await hass.config_entries.options.async_configure(
-        second["flow_id"],
-        {
-            "max_active": 1,
-            "capacity_mode": "classic",
-            "recurrence_mode": "count",
-            "strategy": "fifo",
-            "monitored_entities": list(ENTITIES),
-        },
+        second["flow_id"], {"recurrence_mode": "count"}
     )
     assert updated["type"].value == "create_entry"
     await hass.async_block_till_done()
