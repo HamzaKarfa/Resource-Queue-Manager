@@ -19,6 +19,10 @@ request:
       required: false
       selector:
         object: {}
+    engine_data:
+      required: false
+      selector:
+        object: {}
 
 release:
   fields:
