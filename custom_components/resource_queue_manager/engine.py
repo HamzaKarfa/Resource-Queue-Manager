@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from .allocation import DEFAULT_ALLOCATION_MODE, validate_allocation_mode
 from .capacity import DEFAULT_CAPACITY_MODE, get_capacity_policy
 from .recurrence import DEFAULT_RECURRENCE_MODE, get_recurrence_policy
 from .strategies import (
@@ -39,6 +40,7 @@ class ResourceQueue:
         strategy_config: Mapping[str, object] | None = None,
         capacity_mode: str = DEFAULT_CAPACITY_MODE,
         recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
+        allocation_mode: str = DEFAULT_ALLOCATION_MODE,
     ) -> None:
         if (
             type(max_active) is not int
@@ -53,6 +55,7 @@ class ResourceQueue:
         self._capacity_policy = get_capacity_policy(capacity_mode)
         self.recurrence_mode = recurrence_mode
         self._recurrence_policy = get_recurrence_policy(recurrence_mode)
+        self.allocation_mode = validate_allocation_mode(allocation_mode)
         self._active: dict[str, None] = {}
         self._waiting: deque[str] = deque()
         self._requests: dict[str, QueueRequest] = {}
@@ -73,10 +76,12 @@ class ResourceQueue:
         engine_request_data: object | None = None,
         recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
         occurrence_counts: object | None = None,
+        allocation_mode: str = DEFAULT_ALLOCATION_MODE,
     ) -> "ResourceQueue":
         """Restore grants and metadata exactly; never allocate while loading."""
         instance = cls(
-            max_active, strategy, strategy_config, capacity_mode, recurrence_mode
+            max_active, strategy, strategy_config, capacity_mode, recurrence_mode,
+            allocation_mode
         )
         if not isinstance(active, list) or not isinstance(waiting, list):
             raise ValueError("stored active and waiting must be lists")
@@ -273,21 +278,28 @@ class ResourceQueue:
 
     def _allocate(self) -> QueueResult:
         newly_granted: list[str] = []
+        remaining: deque[str] = deque()
         while self._waiting:
-            candidate = self._waiting[0]
+            candidate = self._waiting.popleft()
             if candidate in self._active:
-                self._waiting.popleft()
                 continue
-            # Never skip the strategy-selected head of the waiting queue.
-            if not self._capacity_policy.can_allocate(
+            can_fit = self._capacity_policy.can_allocate(
                 active_units=tuple(self._effective_units[r] for r in self._active),
                 candidate_units=self._effective_units[candidate],
                 capacity=self.max_active,
-            ):
-                break
-            self._waiting.popleft()
-            self._active[candidate] = None
-            newly_granted.append(candidate)
+            )
+            if can_fit:
+                self._active[candidate] = None
+                newly_granted.append(candidate)
+            else:
+                remaining.append(candidate)
+                if self.allocation_mode == "strict":
+                    # Preserve the rest of the strategy's order unchanged.
+                    remaining.extend(self._waiting)
+                    break
+                # Backfill: continue in strategy order, without modifying
+                # blocked request metadata, recurrence counts or relative order.
+        self._waiting = remaining
         return QueueResult(
             tuple(newly_granted), tuple(self._active), tuple(self._waiting)
         )
