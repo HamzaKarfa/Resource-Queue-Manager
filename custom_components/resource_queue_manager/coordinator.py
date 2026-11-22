@@ -5,6 +5,7 @@ synchronous; the HA adapter serializes state mutations and disk writes.
 """
 
 from collections.abc import Callable, Iterable, Mapping
+from .capacity import DEFAULT_CAPACITY_MODE
 from .engine import ResourceQueue, QueueResult
 from .strategies import DEFAULT_STRATEGY, validate_strategy_config
 from .entity_supervision import (
@@ -32,8 +33,12 @@ class ResourceQueueCoordinator:
         monitored_entities: Iterable[str] = (),
         strategy: str = DEFAULT_STRATEGY,
         strategy_config: Mapping[str, object] | None = None,
+        capacity_mode: str = DEFAULT_CAPACITY_MODE,
+        entity_weights: Mapping[str, int] | None = None,
     ) -> None:
-        self.queue = ResourceQueue(max_active, strategy, strategy_config)
+        self.queue = ResourceQueue(
+            max_active, strategy, strategy_config, capacity_mode=capacity_mode
+        )
         self._entity_state = entity_state
         self._entities: dict[str, str] = {}
         monitored = list(monitored_entities)
@@ -42,6 +47,23 @@ class ResourceQueueCoordinator:
         if len(set(monitored)) != len(monitored):
             raise QueueStateError("Duplicate supervised entity")
         self._monitored_entities = frozenset(monitored)
+        weights = dict(entity_weights or {})
+        if capacity_mode == "classic" and weights:
+            raise QueueStateError("Classic capacity does not configure entity weights")
+        if set(weights) - self._monitored_entities:
+            raise QueueStateError("Weights refer to entities that are not supervised")
+        if capacity_mode == "weighted":
+            self._entity_weights = {}
+            for entity in monitored:
+                weight = weights.get(entity, 1)
+                try:
+                    self._entity_weights[entity] = self.queue._capacity_policy.resolve_request_units(
+                        engine_data=None, default_units=weight, capacity=max_active
+                    )
+                except ValueError as err:
+                    raise QueueStateError(f"Invalid weight for {entity!r}: {err}") from err
+        else:
+            self._entity_weights = {}
         self.paused = False
 
     @classmethod
@@ -54,6 +76,8 @@ class ResourceQueueCoordinator:
         legacy_max_active: int | None = None,
         strategy: str = DEFAULT_STRATEGY,
         strategy_config: Mapping[str, object] | None = None,
+        capacity_mode: str = DEFAULT_CAPACITY_MODE,
+        entity_weights: Mapping[str, int] | None = None,
     ) -> "ResourceQueueCoordinator":
         """Restore saved request order and entity registry; always start paused."""
         if not isinstance(saved, dict):
@@ -68,6 +92,7 @@ class ResourceQueueCoordinator:
         )
         saved_strategy = saved.get("strategy", DEFAULT_STRATEGY)
         saved_config = saved.get("strategy_config", {})
+        saved_capacity_mode = saved.get("capacity_mode", DEFAULT_CAPACITY_MODE)
         configured = validate_strategy_config(strategy, strategy_config)
         saved_active = saved.get("active")
         saved_waiting = saved.get("waiting")
@@ -78,15 +103,23 @@ class ResourceQueueCoordinator:
             raise QueueStateError(
                 "Cannot change strategy or settings while reservations or requests are pending"
             )
+        if saved_capacity_mode != capacity_mode and (saved_active or saved_waiting):
+            raise QueueStateError(
+                "Cannot change capacity mode while reservations or requests are pending"
+            )
         queue = ResourceQueue.from_snapshot(
             stored_limit, saved_active, saved_waiting,
             strategy=strategy, strategy_config=configured,
             request_data=saved.get("request_data", {}),
+            capacity_mode=capacity_mode,
+            engine_request_data=saved.get("engine_request_data", {}),
         )
-        if len(queue.snapshot().active) > max_active:
+        try:
+            queue.validate_capacity_limit(max_active)
+        except ValueError as err:
             raise QueueStateError(
-                "New maximum cannot be below the saved active reservations"
-            )
+                "New maximum cannot honor saved active or waiting reservations"
+            ) from err
         queue.max_active = max_active
         bindings = saved.get("bindings")
         if not isinstance(bindings, dict):
@@ -104,9 +137,12 @@ class ResourceQueueCoordinator:
             ):
                 raise QueueStateError("Legacy entity registry disagrees with queue")
 
+        if entity_weights is None and capacity_mode == "weighted":
+            entity_weights = saved.get("entity_weights", {})
         instance = cls(
             max_active, entity_state, monitored_entities,
             strategy=strategy, strategy_config=configured,
+            capacity_mode=capacity_mode, entity_weights=entity_weights,
         )
         for resource, entity in bindings.items():
             instance._validate_resource_id(resource)
@@ -138,6 +174,9 @@ class ResourceQueueCoordinator:
             "strategy": self.strategy,
             "strategy_config": dict(self.queue.strategy_config),
             "request_data": self.queue.export_request_data(),
+            "capacity_mode": self.capacity_mode,
+            "engine_request_data": self.queue.export_engine_request_data(),
+            "entity_weights": dict(self._entity_weights),
             "bindings": dict(self._entities),
         }
 
@@ -152,6 +191,22 @@ class ResourceQueueCoordinator:
     @property
     def max_active(self) -> int:
         return self.queue.max_active
+
+    @property
+    def capacity_mode(self) -> str:
+        return self.queue.capacity_mode
+
+    @property
+    def entity_weights(self) -> dict[str, int]:
+        return dict(self._entity_weights)
+
+    @property
+    def capacity_used(self) -> int:
+        return self.queue.capacity_used
+
+    @property
+    def capacity_remaining(self) -> int:
+        return self.queue.capacity_remaining
 
     @property
     def monitored_entities(self) -> tuple[str, ...]:
@@ -202,6 +257,8 @@ class ResourceQueueCoordinator:
     def request(
         self, resource_id: str, entity_id: str,
         request_data: Mapping[str, object] | None = None,
+        *,
+        engine_data: Mapping[str, object] | None = None,
     ) -> QueueResult:
         """Ask for a slot, without switching any real device."""
         self._require_ready()
@@ -240,7 +297,11 @@ class ResourceQueueCoordinator:
             raise QueueStateError(issue)
 
         try:
-            result = self.queue.request(resource_id, request_data)
+            result = self.queue.request(
+                resource_id, request_data,
+                engine_data=engine_data,
+                default_weight=self._entity_weights.get(entity_id, 1),
+            )
         except ValueError as err:
             raise QueueStateError(str(err)) from err
         self._entities[resource_id] = entity_id
