@@ -99,12 +99,19 @@ def _normalize_weights(
 ) -> dict[str, int]:
     if set(values) != set(entities):
         raise ValueError("Every supervised entity requires a default weight")
-    if any(
-        type(value) is not int or value < 1 or value > capacity
-        for value in values.values()
-    ):
-        raise ValueError("Weights must be positive integers within total capacity")
-    return dict(values)
+    result: dict[str, int] = {}
+    for entity in entities:
+        value = values[entity]
+        # HA NumberSelector may return 30.0 for a step=1 box. Normalize
+        # integral floats from the UI, but reject fractions and booleans.
+        if (
+            type(value) not in (int, float)
+            or not (1 <= value <= capacity)
+            or int(value) != value
+        ):
+            raise ValueError("Weights must be positive integer units within total capacity")
+        result[entity] = int(value)
+    return result
 
 
 def _saved_capacity_error(
