@@ -53,11 +53,18 @@ MAX_ACTIVE_SELECTOR = NumberSelector(
 def capacity_mode_selector(language: str = "en") -> SelectSelector:
     """Capacity is independent of the selected ordering strategy."""
     french = language.lower().startswith("fr")
+    translated = {
+        "classic": "Classique (places)",
+        "weighted": "Pondéré (unités)",
+    }
     return SelectSelector(
         SelectSelectorConfig(
             options=[
-                SelectOptionDict(value="classic", label="Classique (places)" if french else "Classic (slots)"),
-                SelectOptionDict(value="weighted", label="Pondéré (unités)" if french else "Weighted (units)"),
+                SelectOptionDict(
+                    value=key,
+                    label=translated.get(key, provider.label) if french else provider.label,
+                )
+                for key, provider in CAPACITY_PROVIDERS.items()
             ],
             mode=SelectSelectorMode.DROPDOWN,
         )
