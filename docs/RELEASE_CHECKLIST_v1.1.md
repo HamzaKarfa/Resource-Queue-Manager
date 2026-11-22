@@ -1,87 +1,53 @@
-# v1.1.0 Release acceptance checklist — internal
+# Resource Queue Manager v1.1.0 — Stable release checklist
 
-**UNRELEASED.** Do not merge or publish before reviewing these gates. This file intentionally does not mark manual validation complete.
+This checklist records **what automation proves** and what still requires manual verification. Closing issues or publishing a prerelease is not evidence that a real Home Assistant migration and rollback were executed.
 
-## Stable integration approach — one consolidation PR
+## Feature delivery and integration
 
-The feature stack is already represented by published `v1.1.0-rc.2`. To avoid duplicate/partial merges of stacked PR branches, prepare **one consolidated PR against `main`**, based on the RC2 tag plus the v1.1 stable-ready documentation.
+- [x] Capacity providers: Classic and Weighted, with frozen per-request effective weights.
+- [x] Independent Strict / Backfill allocator and FIFO / LIFO / Priority FIFO strategies.
+- [x] Ignore / Count recurrence provider; waiting repeats preserve order and costs.
+- [x] Home Assistant four-category configuration menu, guided initial setup and EN/FR translations.
+- [x] Save-before-grant event semantics and persisted paused recovery.
+- [x] Complete feature candidate released as [v1.1.0-rc.2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). The RC2 guarded workflow passed Python 3.13/3.14, Home Assistant fixture tests, HACS and hassfest.
+- [x] Feature issues #12–#17, #27 and #29 closed as completed in RC2.
+- [x] One [consolidation PR #32](https://github.com/HamzaKarfa/Resource-Queue-Manager/pull/32) targets `main`; do not merge the stacked feature or old RC staging PRs individually.
 
-- [x] Feature code and documentation in the RC2 snapshot; the RC2 guarded CI passed Python 3.13/3.14, HA integration, HACS and hassfest.
-- [x] Individual implementation issues #12–#17, #27 and #29 completed in the pre-release.
-- [ ] Approve/merge the consolidated PR **once**, after final review, instead of merging the RC1/RC2 release PRs (which carry pre-release versions) or merging each stacked feature PR separately.
-- [ ] Before merging to main, update the manifest from `1.1.0-rc.2` to `1.1.0` in an explicitly approved stable version-bump commit and verify all final checks again.
-- [ ] After the consolidated merge, close the now-redundant stacked PRs as **superseded by the actual merged consolidation PR**; do not falsely mark them merged.
-- [ ] Keep tracking issue #11 and release-readiness issue #18 open until the stable tag is published and manual acceptance is complete.
+## Stable publication gates
 
-**Do not close or merge implementation PRs prematurely:** they still provide code review context and the stable integration has not reached `main`. The existing v1.0 stable publication workflows are version-pinned and require a dedicated v1.1 stable workflow.
+- [x] Manifest staged as `1.1.0`, with version-matching public notes `docs/releases/v1.1.0.md`.
+- [x] README.md, README.fr.md and provider README files describe the final stable features and migration.
+- [x] Dedicated `publish-v1.1-approved-merge.yml` workflow checks for exact PR #32 merge authorization, two-parent merge, manifest/notes, unique tag, and the same final commit for the published release.
+- [ ] All PR #32 tests pass on its **final head SHA**: Python 3.13 and 3.14, Home Assistant 2026.11 integration, HACS and hassfest.
+- [ ] PR #32 reviewed and made **Ready for review**.
+- [ ] Explicit merge authorization from maintainer and actual two-parent PR #32 merge into `main`. Squash and rebase will not activate the stable workflow.
+- [ ] Workflow tests pass on **the actual `main` merge SHA**; publication proceeds automatically only after all these tests pass.
+- [ ] Confirm GitHub release `v1.1.0` is **stable/latest** (not a prerelease), its tag equals the tested merge SHA, and previous RC tags are unchanged.
+- [ ] Close superseded stacked implementation PRs with a reference to the merged PR #32; close tracking issues #11 and #18 only after release verification.
 
-## Préversion v1.1.0-rc.2 — Backfill et configuration organisée
+## Manual Home Assistant acceptance — not demonstrated by CI
 
-**Autorisation de pré-release RC2 :** le mainteneur a demandé d'intégrer la refonte des paramètres à la prochaine candidate. La publication de `v1.1.0-rc.2` reste conditionnée aux contrôles CI du workflow dédié ; aucune validation manuelle n'est implicitement considérée comme réussie.
+The maintainer should explicitly validate these with a backup and noncritical test entities. **Leave unchecked unless actually observed.**
 
+- [ ] Full Home Assistant backup saved, including `.storage/resource_queue_manager.*` and config entries.
+- [ ] Upgrade an existing v1.0 populated queue and verify exact `active`/`waiting` IDs, original four sensor IDs, defaults Classic + Strict + Ignore, and no duplicate grant events.
+- [ ] Confirm every queue restores `paused`, inspect `recovery_issues`, resume only after supervising entity state.
+- [ ] Weighted (capacity 15): defaults 10 + 10, verify blocked waiting request, then effective override 5 permits two simultaneous reservations without changing its configured default.
+- [ ] Backfill (capacity 15): active 10, blocked head 10, later requests 3 and 2 are granted while the head remains waiting; Strict blocks them.
+- [ ] Priority FIFO ordering and FIFO ties across three or more distinct resources (including Backfill).
+- [ ] Count repeated pending request ID three times; verify one pending entry and `occurrences: 3` on grant; active repeats do not increase it.
+- [ ] Change only one of the four Configure categories; other settings, weights, priorities and counts remain unchanged.
+- [ ] Opening a Configure menu does not pause a running queue; accepted edits trigger reload and paused recovery.
+- [ ] Two queues do not share reservations, budgets or events; actions target `config_entry_id` explicitly.
+- [ ] Corrupt snapshots, invalid weights and policy changes with nonempty queues fail closed, without losing stored reservations.
+- [ ] Restore the matching full **v1.0 backup** in a separate test instance to confirm rollback. A code-only downgrade after Weighted/Count data is **not** guaranteed.
 
+## Publication safety and rollback
 
-La branche `release/v1.1.0-rc.2` regroupe les PR #28 (Backfill) et #30 (interface en quatre catégories) au-dessus de la pré-release précédente. La publication doit créer un **nouveau tag**, sans déplacer `v1.1.0-rc.1`, fusionner dans `main` ni marquer la candidate comme stable.
+The stable workflow triggers only from a **push to `main` whose head merge commit subject** is exactly `release: authorize v1.1.0 stable (PR #32)`. It validates that the commit is a two-parent merge and is GitHub PR #32's actual merge commit. A nonmatching push is inert.
 
-- [ ] Vérifier les tests Python 3.13 et 3.14, Home Assistant 2026.11, HACS et hassfest **sur le commit final autorisant la RC2**.
-- [ ] Publier uniquement `v1.1.0-rc.2` comme **GitHub pre-release**, jamais « latest stable », après ces vérifications.
-- [ ] Vérifier que les quatre rubriques apparaissent en français et en anglais et qu'une seule rubrique peut être modifiée sans ressaisir les autres.
-- [ ] Vérifier que l'ouverture des menus ne met pas en pause une file active, mais que tout changement accepté conserve la reprise explicite après rechargement.
-- [ ] Tester Strict et Backfill sur une file pondérée avec une demande bloquée devant deux petites demandes.
-- [ ] Vérifier sur HA réel la migration de la RC1 vers RC2, la reprise après redémarrage et un retour arrière sur sauvegarde cohérente.
+The publishing job refuses an existing tag/release and uses `--target "$GITHUB_SHA" --latest` to publish **v1.1.0 stable** on the exact commit tested.
 
-**Aucune de ces validations manuelles n'est réputée acquise grâce aux seuls tests CI.**
+A failure before publication must leave v1.0.0 as the latest stable; review the GitHub Actions logs and fix the release branch/PR rather than moving or overwriting existing tags. After publication, rollback on a specific Home Assistant installation requires restoring the pre-upgrade full backup, not merely installing an old version of the integration.
 
-## Préversion v1.1.0-rc.1 — branche de validation
-
-La branche `release/v1.1.0-rc.1` rassemble les commits empilés des PR #19 à #25 sans fusionner ces PR dans `main`. Son manifeste utilise `1.1.0-rc.1`; la branche stable et le tag `v1.0.0` ne changent pas.
-
-- [ ] Tester **le SHA final de la branche RC** (Python 3.13/3.14, tests HA 2026.11, HACS/hassfest) et vérifier les notes `docs/releases/v1.1.0-rc.1.md`.
-- [ ] Publier uniquement un tag `v1.1.0-rc.1` marqué **GitHub prerelease**, jamais « latest stable », et rattaché exactement au commit testé.
-- [ ] Tester l'installation et le retour arrière sur une instance HA séparée, sans faire passer les essais CI pour des tests matériels.
-- [ ] Poursuivre les revues et les fusions sur `main` indépendamment de la RC, après vérification des prérequis.
-
-## Ordered PR dependency chain
-
-- [ ] #19 classic provider foundations → `main`
-- [ ] #20 weighted units → `main` after #19
-- [ ] #21 Home Assistant capacity options → `main` after #20
-- [ ] #22 recurrence counting → `main` after #21
-- [ ] #23 action, sensor and event contract → `main` after #22
-- [ ] #24 snapshot migration and recovery guards → `main` after #23
-- [ ] Final documentation / release-readiness PR after #24
-
-## Automated checks — at the final proposed merge SHA
-
-- [ ] Python 3.13 and 3.14 unit tests: `python -m unittest discover -s tests -v`
-- [ ] Home Assistant 2026.11 fixture integration suite: `python -m pytest -q tests/ha`
-- [ ] HACS/Marketplace validation and hassfest
-- [ ] Confirm all EN/FR JSON strings parse and keys match; confirm selector labels in Home Assistant
-- [ ] No unrelated file changes, unstable dependencies or merge conflicts
-
-## Manual HA checks — not verified by CI
-
-- [ ] Fresh classic/ignore queue created in English and French, with legacy YAML request/release/cancel/resume.
-- [ ] Update v1.0 populated queue, preserve original `active`/`waiting` and sensor IDs, remain paused until `resume`.
-- [ ] Weighted setup: capacity 100, per-entity weights 30/40, one-request `engine_data.weight: 25`, then release restores exactly 25.
-- [ ] Strict head-of-line: active 70, pending 40, pending 20; last request cannot pass the 40-unit head when only 30 units remain.
-- [ ] Count mode: 3 pending identical resource IDs yield one waiting entry and `occurrences: 3`; active duplicates do not increment.
-- [ ] Count + Priority FIFO + Weighted on the same queue without changes to ordering or weight.
-- [ ] Confirm event payload fields and persistence-before-event; IDs must match the owning queue.
-- [ ] Two independent queues, route every service by `config_entry_id`, no cross-queue grants.
-- [ ] Stop/restart with active and waiting work; restore paused, no regrant until explicit safe resume.
-- [ ] Reject invalid weights, mode switching with existing work, and removing bound entities; preserve saved state.
-- [ ] Verify corrupted snapshot fails closed without lost active bookings and with a clear log.
-- [ ] Test backup/restore rollback to v1.0 in a **separate** HA installation; do not attempt a code-only downgrade.
-
-## Release procedure — requires explicit approval
-
-- [ ] Capture maintainer approval, final PR SHA and backup/rollback plan.
-- [ ] Merge PRs sequentially and inspect each diff on `main`.
-- [ ] Update `manifest.json` version **1.1.0** only in the specifically approved release commit.
-- [ ] Finalize `CHANGELOG.md` and `docs/releases/v1.1.0-draft.md` (rename to public release notes when approved).
-- [ ] Confirm guarded release workflow supports v1.1.0; do not assume the v1.0 workflow is reusable without review.
-- [ ] Create / publish release tag `v1.1.0` only after every gate and maintainer sign-off.
-- [ ] Verify public HACS/Marketplace artifact matches signed-off commit; monitor error reports and prepare a patch if necessary.
-
-**These gates intentionally remain unchecked until proven, including the live-HA tests.**
+**The automated CI checks do not certify real electrical safety or real-HA rollback success.**
