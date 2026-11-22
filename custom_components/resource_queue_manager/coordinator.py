@@ -5,8 +5,8 @@ synchronous; the HA adapter serializes state mutations and disk writes.
 """
 
 from collections.abc import Callable, Iterable, Mapping
-from .capacity import DEFAULT_CAPACITY_MODE
-from .recurrence import DEFAULT_RECURRENCE_MODE
+from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE
+from .recurrence import DEFAULT_RECURRENCE_MODE, RECURRENCE_PROVIDERS
 from .engine import ResourceQueue, QueueResult
 from .strategies import DEFAULT_STRATEGY, validate_strategy_config
 from .entity_supervision import (
@@ -98,6 +98,10 @@ class ResourceQueueCoordinator:
         saved_config = saved.get("strategy_config", {})
         saved_capacity_mode = saved.get("capacity_mode", DEFAULT_CAPACITY_MODE)
         saved_recurrence_mode = saved.get("recurrence_mode", DEFAULT_RECURRENCE_MODE)
+        if type(saved_capacity_mode) is not str or saved_capacity_mode not in CAPACITY_PROVIDERS:
+            raise QueueStateError("Unknown saved capacity mode")
+        if type(saved_recurrence_mode) is not str or saved_recurrence_mode not in RECURRENCE_PROVIDERS:
+            raise QueueStateError("Unknown saved recurrence mode")
         configured = validate_strategy_config(strategy, strategy_config)
         saved_active = saved.get("active")
         saved_waiting = saved.get("waiting")
