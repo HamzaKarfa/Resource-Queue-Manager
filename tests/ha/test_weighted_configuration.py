@@ -113,6 +113,13 @@ async def test_weighted_request_service_defaults_overrides_and_restoration(hass:
     assert manager.capacity_remaining == 45
     assert manager.queue.effective_weight("h1") == 30
     assert manager.queue.effective_weight("h2") == 25
+    available = hass.states.get("sensor.weighted_test_queue_available")
+    assert available is not None
+    assert available.state == "45"
+    assert available.attributes["capacity_mode"] == "weighted"
+    assert available.attributes["capacity_total"] == 100
+    assert available.attributes["capacity_used"] == 55
+    assert available.attributes["effective_weights"] == {"h1": 30, "h2": 25}
 
     # Omitting the override does not re-evaluate the entity's default.
     await action(hass, "request", resource_id="h2", entity_id=ENTITIES[1])
@@ -215,6 +222,10 @@ async def test_options_reject_limit_that_cannot_fit_frozen_pending_weight(hass: 
     await action(hass, "request", resource_id="h2", entity_id=ENTITIES[1])
     manager = hass.data[DOMAIN][entry.entry_id].manager
     assert manager.snapshot().waiting == ("h2",)
+    # 30 units remain physically unreserved, but the 35-unit head blocks.
+    available = hass.states.get("sensor.weighted_test_queue_available")
+    assert available is not None
+    assert available.state == "30"
 
     flow = await hass.config_entries.options.async_init(entry.entry_id)
     rejected = await hass.config_entries.options.async_configure(
