@@ -36,6 +36,46 @@
       "weights": {
         "title": "Default weights per entity",
         "description": "Enter one positive integer unit cost per supervised entity. These defaults apply only to new requests; engine_data.weight may override a single request. Each form field is the entity ID."
+      },
+      "setup_capacity": {
+        "title": "Capacity",
+        "data": {
+          "capacity_mode": "Capacity mode",
+          "max_active": "Capacity limit"
+        },
+        "data_description": {
+          "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO.",
+          "max_active": "Classic: 1–50 simultaneous slots. Weighted: 1–100000 shared units (not watts)."
+        }
+      },
+      "setup_scheduling": {
+        "title": "Scheduling and allocation",
+        "data": {
+          "strategy": "Scheduling strategy",
+          "allocation_mode": "Allocation mode"
+        },
+        "data_description": {
+          "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
+          "allocation_mode": "Strict (default): stop when the first waiting request does not fit. Backfill: skip blocked requests and grant later ones that fit, preserving their relative order. A large or high-priority request may starve."
+        }
+      },
+      "setup_strategy": {
+        "title": "Priority settings",
+        "data": {
+          "priority_order": "Priority order"
+        },
+        "data_description": {
+          "priority_order": "Highest first: 10 before 1. Lowest first: 1 before 10. Equal priorities retain arrival order."
+        }
+      },
+      "setup_recurrence": {
+        "title": "Repeated requests",
+        "data": {
+          "recurrence_mode": "Repeated request handling"
+        },
+        "data_description": {
+          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority."
+        }
       }
     },
     "error": {
@@ -136,6 +176,18 @@
           "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO.",
           "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority.",
           "allocation_mode": "Strict (default): stop when the first waiting request does not fit. Backfill: skip blocked requests and grant later ones that fit, preserving their relative order. A large or high-priority request may starve."
+        },
+        "menu_options": {
+          "resources": "Supervised resources",
+          "capacity": "Capacity",
+          "scheduling": "Scheduling and allocation",
+          "recurrence": "Repeated requests"
+        },
+        "menu_option_descriptions": {
+          "resources": "Choose which Home Assistant entities this queue supervises and set their default weights.",
+          "capacity": "Choose classic slots or weighted units, then set the total capacity.",
+          "scheduling": "Select FIFO, LIFO or Priority FIFO and strict or backfill admission.",
+          "recurrence": "Ignore or count repeated requests still waiting in this queue."
         }
       },
       "strategy": {
@@ -151,6 +203,63 @@
       "weights": {
         "title": "Default weights per entity",
         "description": "Enter one positive integer unit cost per supervised entity. These defaults apply only to new requests; engine_data.weight may override a single request. Each form field is the entity ID."
+      },
+      "resources": {
+        "title": "Supervised resources",
+        "data": {
+          "monitored_entities": "Supervised entities"
+        },
+        "data_description": {
+          "monitored_entities": "Select any Home Assistant entity, including input_boolean, input_number, input_text, number and text. Generic entity values do not prove physical shutdown."
+        }
+      },
+      "capacity": {
+        "title": "Capacity",
+        "data": {
+          "capacity_mode": "Capacity mode",
+          "max_active": "Capacity limit"
+        },
+        "data_description": {
+          "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO.",
+          "max_active": "Classic: 1–50 simultaneous slots. Weighted: 1–100000 shared units (not watts)."
+        }
+      },
+      "scheduling": {
+        "title": "Scheduling and allocation",
+        "data": {
+          "strategy": "Scheduling strategy",
+          "allocation_mode": "Allocation mode",
+          "edit_strategy_options": "Edit priority settings"
+        },
+        "data_description": {
+          "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
+          "allocation_mode": "Strict (default): stop when the first waiting request does not fit. Backfill: skip blocked requests and grant later ones that fit, preserving their relative order. A large or high-priority request may starve.",
+          "edit_strategy_options": "Enable this only to change the Priority FIFO direction. You can change Strict/Backfill without reopening priority settings."
+        }
+      },
+      "recurrence": {
+        "title": "Repeated requests",
+        "data": {
+          "recurrence_mode": "Repeated request handling"
+        },
+        "data_description": {
+          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority."
+        }
+      },
+      "resource_weights": {
+        "title": "Resource default weights"
+      },
+      "capacity_weights": {
+        "title": "Weights for selected capacity"
+      },
+      "scheduling_details": {
+        "title": "Priority settings",
+        "data": {
+          "priority_order": "Priority order"
+        },
+        "data_description": {
+          "priority_order": "Highest first: 10 before 1. Lowest first: 1 before 10. Equal priorities retain arrival order."
+        }
       }
     },
     "error": {
