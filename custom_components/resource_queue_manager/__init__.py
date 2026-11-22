@@ -260,6 +260,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 strategy_config=strategy_config,
                 capacity_mode=capacity_mode,
                 entity_weights=entity_weights,
+                recurrence_mode=recurrence_mode,
                 legacy_max_active=entry.data.get(
                     CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE
                 ),
