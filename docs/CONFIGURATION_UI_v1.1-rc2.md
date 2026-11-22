@@ -1,6 +1,6 @@
-# Resource Queue Manager — configuration par rubrique (développement RC2)
+# Resource Queue Manager — Interface de configuration v1.1
 
-La configuration Home Assistant a été organisée pour éviter l'écran unique très long. Cette amélioration fait partie d'une **branche de développement**, et n'est pas présente dans la pré-release immuable `v1.1.0-rc.1`.
+La nouvelle interface évite l'ancien formulaire unique. Elle est présente dans la pré-release **v1.1.0-rc.2** et fait partie des fonctionnalités préparées pour la **v1.1.0 stable**, qui n'est pas encore publiée au moment de la préparation de ce document.
 
 ## Modification d'une file existante
 
@@ -36,4 +36,4 @@ La première configuration suit désormais un assistant :
 
 La fonctionnalité **ne change pas le moteur** : les paramètres stockés, `resource_id`, `strategy_data`, `engine_data`, les capteurs et les événements continuent de fonctionner comme précédemment. Les modes par défaut des installations historiques restent `classic`, `fifo`, `strict` et `ignore` en l'absence de configuration contraire.
 
-Cette évolution est prévue pour la prochaine **release candidate** intégrant également Backfill (PR #28). Les tests de régression Home Assistant et un essai manuel restent requis avant publication.
+Cette interface et Backfill sont déjà intégrés dans la [pré-release RC2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). Les tests automatisés sont validés sur le tag ; l'essai de migration/rollback réel reste une étape distincte avant une publication stable.
