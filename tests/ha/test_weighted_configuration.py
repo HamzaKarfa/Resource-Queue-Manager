@@ -65,7 +65,7 @@ async def test_weighted_setup_flow_collects_per_entity_defaults(hass: HomeAssist
     created = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {ENTITIES[0]: 30, ENTITIES[1]: 40}
     )
-    assert created["type"].value == "create_entry"
+    assert created["type"].value == "create_entry", (created.get("step_id"), created.get("errors"))
     assert created["data"]["capacity_mode"] == "weighted"
     assert created["data"]["max_active"] == 100
     assert created["data"]["entity_weights"] == {ENTITIES[0]: 30, ENTITIES[1]: 40}
@@ -92,7 +92,7 @@ async def test_weighted_priority_setup_composes_strategy_and_weights(hass: HomeA
     created = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {ENTITIES[0]: 25}
     )
-    assert created["type"].value == "create_entry"
+    assert created["type"].value == "create_entry", (created.get("step_id"), created.get("errors"))
     assert created["data"]["strategy_config"] == {"priority_order": "lowest_first"}
     assert created["data"]["entity_weights"] == {ENTITIES[0]: 25}
 
@@ -156,7 +156,7 @@ async def test_options_switch_to_weighted_and_block_switch_with_bookings(hass: H
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {ENTITIES[0]: 30, ENTITIES[1]: 40, ENTITIES[2]: 1}
     )
-    assert finished["type"].value == "create_entry"
+    assert finished["type"].value == "create_entry", (finished.get("step_id"), finished.get("errors"))
     await hass.async_block_till_done()
     assert entry.options["capacity_mode"] == "weighted"
     assert entry.options["entity_weights"][ENTITIES[0]] == 30
@@ -199,7 +199,7 @@ async def test_change_entity_default_does_not_reweight_active_booking(hass: Home
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {ENTITIES[0]: 45, ENTITIES[1]: 40, ENTITIES[2]: 1}
     )
-    assert finished["type"].value == "create_entry"
+    assert finished["type"].value == "create_entry", (finished.get("step_id"), finished.get("errors"))
     await hass.async_block_till_done()
     manager = hass.data[DOMAIN][entry.entry_id].manager
     assert manager.paused
