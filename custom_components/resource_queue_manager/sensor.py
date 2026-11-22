@@ -77,6 +77,7 @@ class ResourceQueueSensor(SensorEntity):
             "waiting": list(snapshot.waiting),
             "max_active": self._manager.max_active,
             "capacity_mode": self._manager.capacity_mode,
+            "capacity_unit": "slots" if self._manager.capacity_mode == "classic" else "units",
             "capacity_total": self._manager.max_active,
             "capacity_used": self._manager.capacity_used,
             "capacity_remaining": self._manager.capacity_remaining,
