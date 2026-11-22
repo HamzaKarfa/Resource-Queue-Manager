@@ -154,7 +154,7 @@ async def test_invalid_weight_rejected_without_mutation_or_event(hass: HomeAssis
                     {"weight": 1.5}, {"weight": 4, "unknown": 9}):
         with pytest.raises(HomeAssistantError):
             await call_action(
-                hass, "request", resource_id="new", entity_id=entities[1],
+                hass, "request", resource_id="pending", entity_id=entities[1],
                 engine_data=invalid,
             )
     with pytest.raises(HomeAssistantError, match="different effective weight"):
