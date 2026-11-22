@@ -4,6 +4,30 @@ All notable changes to Resource Queue Manager are documented here.
 Versions follow Semantic Versioning; the Home Assistant manifest version and
 GitHub Release tag are intended to match (`1.0.0` ↔ `v1.0.0`).
 
+## [Unreleased] — planned v1.1.0
+
+**Development candidate only.** The features below are in stacked draft PRs and have not been published to Marketplace/HACS.
+
+### Added
+- Pure-Python capacity provider registry with `classic` (v1-compatible slots) and `weighted` (single shared integer unit budget, no additional slot limit).
+- Configurable integer weight per supervised entity (default 1); optional `engine_data.weight` override on one new request, frozen while pending, active and after reload.
+- Independent `ignore`/`count` recurrence providers; identical pending resource IDs can be counted without duplicate queue entries, reordering or new reservations.
+- Capacity/recurrence selectors in native HA config/options forms with English/French translations.
+- Exposed `capacity_mode`, `capacity_unit`, total/used/remaining, effective request weights and occurrence counts as attributes on the existing four sensors.
+- Extended persisted grant events with capacity mode, effective weight and occurrence count.
+- Focused tests for 12 strategy × capacity × recurrence combinations, concurrent queue isolation, persistence-before-event, and fail-closed snapshot migration.
+
+### Maintained
+- Existing v1.0 queues default to `classic + ignore` with original service YAML, sensor IDs, strategy ordering and supervised OFF rules.
+- Every queue starts paused after reload and requires an explicit `resume`; invalid snapshots never reset silently.
+- No direct actuation, global budget, watts calculation, message-content deduplication, priority aging or preemption.
+
+### Migration / release
+See [v1.0 → v1.1 migration guide](docs/MIGRATION_v1.0_to_v1.1.md),
+[draft release notes](docs/releases/v1.1.0-draft.md) and
+[unverified manual release gates](docs/RELEASE_CHECKLIST_v1.1.md).
+The manifest stays at `1.0.0` until a separately approved release commit.
+
 ## [1.0.0]
 
 **Multi-instance and strategy-provider architecture.** Version 1 introduces
