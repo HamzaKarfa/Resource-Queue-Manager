@@ -1,6 +1,6 @@
-# Resource Queue Manager — Upgrade v1.0.0 → v1.1.0 (pre-release)
+# Resource Queue Manager — Upgrade from v1.0.0 to v1.1.0
 
-**Not published yet.** These steps are for the development candidate. HACS/Marketplace continues to install the published stable version, not stacked PR branches.
+**Stable release preparation:** this guide covers the upcoming **v1.1.0** and the published [v1.1.0-rc.2 test candidate](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). At documentation-preparation time, **v1.0.0 is still the latest stable release**. Check the actual installed version before changing any configuration.
 
 ## Back up first
 
@@ -11,7 +11,7 @@
 
 ## Backwards compatibility
 
-- Existing queues with no `capacity_mode` or `recurrence_mode` configuration use `classic` and `ignore`.
+- Existing queues without the new configuration fields use **`classic` (capacity), `ignore` (recurrence) and `strict` (allocation)**; no explicit conversion of their settings is required.
 - Classic still reserves one slot per active request; old `resource_queue_manager.request`, `release`, `cancel`, and `resume` YAML remains valid.
 - Existing four per-queue sensor identifiers are preserved. Active and waiting attributes remain lists of resource IDs.
 - New configuration names, weights and counters are stored per queue; old snapshots without them are migrated in memory and saved at the next normal state change.
@@ -27,7 +27,8 @@
 | Per entity | All reservations consume one slot | Each supervised `entity_id` gets a default integer weight (initial 1) |
 | Request override | Not required | `engine_data.weight` overrides its entity default **for one new request** |
 | Duplicate requests | Ignore/idempotent | Count occurrences of identical *waiting* `resource_id` |
-| Scheduling | FIFO, LIFO, Priority FIFO | Unchanged; strict head-of-line, no preemption |
+| Scheduling | FIFO, LIFO, Priority FIFO | Unchanged strategy order and non-preemption |
+| Allocation | Strict head-of-line | Optional **Backfill** scans later fitting waiters while preserving blocked request order |
 
 ### Weighted example
 
@@ -49,6 +50,14 @@ The effective weight is frozen while the request waits, runs and is restored. Re
 
 Under `recurrence_mode: count`, the first pending request has `occurrences: 1`. Two identical repeat calls for its `resource_id` produce `occurrences: 3` without creating new queue entries. Active requests do not accrue further counts. The count is available in `occurrence_counts` sensor attributes and the `resource_queue_manager_slot_granted` event. Release or cancellation resets the count.
 
+## New options interface
+
+After upgrade, **Configure** opens a four-category menu: **Supervised resources**, **Capacity**, **Scheduling and allocation**, and **Repeated requests**. Opening it does not pause the queue. An accepted change reloads the entry and requires a checked `resume`. Policy changes (strategy, capacity mode, allocation mode or recurrence mode) cannot be made with active or waiting work.
+
+Backfill uses unused capacity behind a blocked head. For example, with a budget of 15 units, A active with weight 10 and B first waiting with weight 10, later C (3) and D (2) may be granted under Backfill while B stays waiting. Under Strict, C and D stay waiting too. **Backfill may starve high-weight or higher-priority requests.**
+
+When changing the capacity limit, defaults that exceed the new budget require review; existing frozen requests and active reservations must remain grantable. See [the settings menu](CONFIGURATION_UI_v1.1-rc2.md) and [Backfill behavior](V1.2_BACKFILL.md).
+
 ## Before resuming a migrated queue
 
 1. Check stored active/waiting IDs and each physical entity's observed state. A reserved ON device may remain reserved; an ON device without a reservation blocks recovery.
@@ -59,11 +68,11 @@ Under `recurrence_mode: count`, the first pending request has `occurrences: 1`. 
 
 ## Configuration and migration rejection rules
 
-- Switching strategy, capacity mode or recurrence mode while any active/waiting request exists is rejected.
+- Switching strategy, capacity mode, **allocation mode** or recurrence mode while any active/waiting request exists is rejected.
 - Reducing capacity below active usage or any pending request's frozen weight is rejected.
 - Removing a supervised entity bound to a reservation is rejected.
 - Corrupt or inconsistent saved weights, counts, bindings or unknown provider identifiers fail closed; **do not delete the stored file to force startup**.
-- Weighted queues may legitimately have spare units while the first waiting request is too large to fit; smaller requests behind it do not skip the head.
+- Weighted **Strict** queues may have spare units while the first waiting request is too large to fit; later requests cannot skip it. In **Backfill**, later requests that fit may be granted without changing the blocked request's position.
 
 ## Rollback
 
@@ -71,4 +80,4 @@ Under `recurrence_mode: count`, the first pending request has `occurrences: 1`. 
 
 ## Validation status
 
-Automated suites cover pure Python 3.13/3.14, Home Assistant fixture tests, HACS and hassfest in each PR. They are not a substitute for an independently verified upgrade/rollback with a live test Home Assistant instance. No automatic public release is authorized by this guide.
+Automated suites cover Python 3.13/3.14, Home Assistant 2026.11 fixtures, HACS and hassfest. The RC2 published commit passed these checks, but **a real-HA migration/rollback rehearsal remains a separate release gate**. Publication of the stable v1.1.0 tag requires explicit approval; these documentation edits do not publish it.
