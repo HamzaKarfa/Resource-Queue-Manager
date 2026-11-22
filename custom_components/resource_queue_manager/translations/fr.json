@@ -10,7 +10,8 @@
           "strategy": "Stratégie d'ordonnancement",
           "monitored_entities": "Entités supervisées",
           "capacity_mode": "Mode de capacité",
-          "recurrence_mode": "Gestion des demandes répétées"
+          "recurrence_mode": "Gestion des demandes répétées",
+          "allocation_mode": "Mode d'attribution"
         },
         "data_description": {
           "name": "Un nom permettant de distinguer cette file des autres, par exemple Chauffage.",
@@ -18,7 +19,8 @@
           "strategy": "FIFO : plus ancienne demande ; LIFO : plus récente ; FIFO prioritaire : priorité d'abord, puis ordre d'arrivée. Les réservations actives ne sont jamais interrompues.",
           "monitored_entities": "Optionnel à la création. Une même entité ne peut appartenir qu'à une seule file.",
           "capacity_mode": "Classique compte les places actives ; pondéré compte les unités indépendamment de FIFO/LIFO/FIFO prioritaire.",
-          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité."
+          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité.",
+          "allocation_mode": "Strict (par défaut) : arrêt si la première demande en attente ne rentre pas. Backfill : les demandes suivantes pouvant utiliser les unités restantes sont accordées sans réordonner les demandes bloquées. Une grosse demande, même prioritaire, peut rester longtemps en attente."
         }
       },
       "strategy": {
@@ -44,7 +46,8 @@
       "invalid_strategy_options": "Les paramètres de la stratégie sélectionnée sont invalides.",
       "invalid_capacity": "La capacité dépasse les limites autorisées pour ce mode.",
       "invalid_weights": "Chaque entité supervisée doit avoir un poids entier valide, inférieur ou égal à la capacité totale.",
-      "invalid_recurrence_mode": "Mode de récurrence inconnu."
+      "invalid_recurrence_mode": "Mode de récurrence inconnu.",
+      "invalid_allocation_mode": "Mode d'attribution inconnu."
     }
   },
   "services": {
@@ -123,14 +126,16 @@
           "max_active": "Limite de capacité",
           "strategy": "Stratégie d'ordonnancement",
           "capacity_mode": "Mode de capacité",
-          "recurrence_mode": "Gestion des demandes répétées"
+          "recurrence_mode": "Gestion des demandes répétées",
+          "allocation_mode": "Mode d'attribution"
         },
         "data_description": {
           "max_active": "Classique : 1 à 50 places simultanées. Pondéré : 1 à 100000 unités communes (pas des watts).",
           "monitored_entities": "Sélectionnez toute entité Home Assistant, dont input_boolean, input_number, input_text, number et text. Les valeurs non ON/OFF ne permettent pas de vérifier un arrêt physique.",
           "strategy": "FIFO, LIFO ou FIFO prioritaire. La file doit être vide pour changer de stratégie ou de paramètres.",
           "capacity_mode": "Classique compte les places actives ; pondéré compte les unités indépendamment de FIFO/LIFO/FIFO prioritaire.",
-          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité."
+          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité.",
+          "allocation_mode": "Strict (par défaut) : arrêt si la première demande en attente ne rentre pas. Backfill : les demandes suivantes pouvant utiliser les unités restantes sont accordées sans réordonner les demandes bloquées. Une grosse demande, même prioritaire, peut rester longtemps en attente."
         }
       },
       "strategy": {
@@ -161,7 +166,9 @@
       "invalid_weights": "Chaque entité supervisée doit avoir un poids entier valide dans la limite de la file.",
       "capacity_mode_in_use": "La file doit être vide de réservations actives et de demandes en attente pour changer de mode de capacité.",
       "invalid_recurrence_mode": "Mode de récurrence inconnu.",
-      "recurrence_mode_in_use": "Videz les réservations actives et les demandes en attente avant de changer de mode de récurrence."
+      "recurrence_mode_in_use": "Videz les réservations actives et les demandes en attente avant de changer de mode de récurrence.",
+      "invalid_allocation_mode": "Mode d'attribution inconnu.",
+      "allocation_mode_in_use": "Videz les réservations actives et les demandes en attente avant de changer de mode d'attribution."
     }
   }
 }
