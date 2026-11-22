@@ -87,6 +87,7 @@ class ResourceQueueSensor(SensorEntity):
             },
             "strategy": self._manager.strategy,
             "recurrence_mode": self._manager.recurrence_mode,
+            "allocation_mode": self._manager.allocation_mode,
             "occurrence_counts": self._manager.queue.export_occurrence_counts(),
             "config_entry_id": self._entry_id,
             "paused": self._manager.paused,
