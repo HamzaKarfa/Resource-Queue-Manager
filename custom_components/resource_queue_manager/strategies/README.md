@@ -1,34 +1,39 @@
-# Strategy plugins
+# Scheduling strategy providers
 
-Each strategy is a self-contained module registered explicitly in
-[`registry.py`](registry.py). Registration uses a `StrategyProvider`
-contract, inspired by a Laravel service provider.
+Resource Queue Manager v1.1 separates **four independent responsibilities**:
 
-Each plugin folder contains:
+1. **Scheduling strategy** — FIFO, LIFO or Priority FIFO decides the waiting order.
+2. **Allocation mode** — Strict stops at the first request that cannot fit; Backfill may grant later requests that fit without reordering blocked entries.
+3. **Capacity policy** — Classic counts slots; Weighted counts positive integer units with frozen per-request costs.
+4. **Recurrence policy** — Ignore or Count repeated requests for the same *waiting* resource ID.
 
-- `provider.py`: stable key, label, optional localized labels,
-  config/request field declarations, and factory for a fresh strategy.
-- `strategy.py`: scheduling policy implementing
-  `enqueue(waiting, request, requests)`.
-- `config.py`: optional per-queue configuration fields, rendered as native
-  Home Assistant selectors by `strategy_forms.py`.
-- `request.py`: optional per-request metadata fields, validated before
-  persistence and scheduling.
+A strategy implementation is a pure-Python provider registered **explicitly** in [registry.py](registry.py); modules are not dynamically loaded from user input.
 
-The generic `engine.py` owns active reservations, capacity, idempotency and
-state recovery. The `coordinator.py` owns entity supervision and safe release.
-**Strategy plugins never switch real devices or override safety checks.**
-
-Installed strategies:
-
-| Directory | Policy | Request fields | Queue settings |
+| Plugin | Ordering | Per-request metadata | Queue configuration |
 | --- | --- | --- | --- |
-| [fifo](fifo/README.md) | Oldest waiting first | None | None |
-| [lifo](lifo/README.md) | Newest waiting first | None | None |
-| [priority_fifo](priority_fifo/README.md) | Priority then FIFO ties | `priority` (1–10) | `priority_order` |
+| [FIFO](fifo/README.md) | Oldest pending first | None | None |
+| [LIFO](lifo/README.md) | Newest pending first | None | None |
+| [Priority FIFO](priority_fifo/README.md) | Priority ranking, FIFO ties | `priority` (1–10) | `priority_order` |
 
-Read the [full developer guide](../../../docs/DEVELOPMENT.md) and
-[v1 architecture](../../../docs/V1_ARCHITECTURE.md) before adding modules.
+## Provider structure
 
-The registry is **explicit**: modules placed on disk are not executed
-automatically, so untrusted strategy code cannot be loaded from user input.
+Every strategy folder supplies:
+
+- `provider.py`: stable key, labels, supported configuration/request descriptors and a factory returning a **fresh** strategy instance.
+- `strategy.py`: `enqueue(waiting, request, requests)` implementation — **waiting order only**.
+- `config.py`: queue-wide settings, rendered by native Home Assistant selectors when needed.
+- `request.py`: per-request provider metadata validation.
+
+The generic [engine](../engine.py) controls allocations, frozen costs, idempotent/counting requests and persistence. The [coordinator](../coordinator.py) validates supervised entities and safe release. **Neither strategy plugins nor Backfill may bypass supervision, change an active booking, switch real devices, or overcommit capacity.**
+
+In the v1.1 Home Assistant interface, strategy and allocation settings are under **Configure → Scheduling and allocation**. Strategy-specific options only appear when needed or requested.
+
+## Backfill interaction
+
+Given 15 weighted units, an active 10-unit reservation, then waiting requests of weights 10, 3 and 2, **Strict** waits at the blocked 10-unit head; **Backfill** can grant weights 3 and 2. The strategy's existing waiting order is preserved for skipped requests.
+
+Priority FIFO's preference is not a strict guarantee of next service when Backfill is on: a lower-priority **fitting** request can pass a higher-priority **non-fitting** request. No priority aging or starvation protection exists.
+
+Read the [developer guide](../../../docs/DEVELOPMENT.md), [Backfill design](../../../docs/V1.2_BACKFILL.md) and [main README](../../../README.md) before introducing another provider.
+
+**Release status:** these APIs are prepared for v1.1.0 stable and included in the [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). They are not present in the stable v1.0.0 feature set.
