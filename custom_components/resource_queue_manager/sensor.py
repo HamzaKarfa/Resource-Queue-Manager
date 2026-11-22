@@ -85,6 +85,8 @@ class ResourceQueueSensor(SensorEntity):
                 for resource in (*snapshot.active, *snapshot.waiting)
             },
             "strategy": self._manager.strategy,
+            "recurrence_mode": self._manager.recurrence_mode,
+            "occurrence_counts": self._manager.queue.export_occurrence_counts(),
             "config_entry_id": self._entry_id,
             "paused": self._manager.paused,
             "monitored_entities": list(self._manager.monitored_entities),
