@@ -12,7 +12,7 @@
 
 Chaque file dispose de sa stratégie, de sa capacité, de ses entités supervisées, de son état persistant et de ses capteurs. Les automatisations demandent une réservation, attendent son attribution puis pilotent elles-mêmes les appareils.
 
-> **Versions :** cette documentation est préparée pour la future **v1.1.0 stable**. Toutes les fonctionnalités décrites sont disponibles dans la [pré-release v1.1.0-rc.2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). Lors de la préparation de ces fichiers, la dernière version **stable** reste la [v1.0.0](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.0.0). Vérifie la version réellement installée avant de chercher les nouvelles options.
+> **Version 1.1.0 :** documentation de la version stable. [Notes de sortie](docs/releases/v1.1.0.md) · [Migration depuis la v1.0](docs/MIGRATION_v1.0_to_v1.1.md). La [pré-release v1.1.0-rc.2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2) reste disponible dans l'historique. Vérifie la version installée : la v1.0.0 ne dispose pas des nouvelles fonctionnalités.
 >
 > **Sécurité :** l'intégration ne commande jamais les appareils directement et ne constitue ni un délesteur électrique certifié ni une protection thermique ou contre les surintensités. Les protections physiques restent indispensables.
 
@@ -89,13 +89,13 @@ Les compteurs sont disponibles dans l'attribut `occurrence_counts` des capteurs 
 
 **Prérequis : Home Assistant 2026.11.0 minimum.**
 
-Pour une **version stable publiée**, ouvre **Paramètres → Marketplace**, recherche *Resource Queue Manager*, installe ou mets à jour puis redémarre Home Assistant. Si nécessaire, ajoute le dépôt :
+Ouvre **Paramètres → Marketplace**, recherche *Resource Queue Manager*, installe ou mets à jour la version stable, puis redémarre Home Assistant. Si nécessaire, ajoute le dépôt :
 
 ```text
 https://github.com/HamzaKarfa/Resource-Queue-Manager
 ```
 
-**Attention à la version :** tant que la v1.1.0 stable n'est pas publiée, le canal stable Marketplace/HACS fournit toujours la v1.0.0. Les nouveaux réglages nécessitent la [RC2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2), à tester de préférence sur une instance Home Assistant séparée.
+**Attention à la version :** les nouvelles options nécessitent **v1.1.0 ou supérieure**. La v1.0.0 ne permet pas de choisir la capacité pondérée, Backfill ou le comptage des répétitions.
 
 Avant de mettre à niveau une installation existante, sauvegarde Home Assistant et ses données `.storage`. Évite de mélanger des fichiers de différentes versions dans `custom_components/resource_queue_manager/`. Consulte [la migration v1.0 → v1.1](docs/MIGRATION_v1.0_to_v1.1.md).
 
@@ -226,14 +226,14 @@ L'événement `resource_queue_manager_slot_granted` est émis **après sauvegard
 | Demande répétée refusée | Vérifier que l'entité, la priorité et le poids figé restent identiques |
 | Libération impossible | Pour les domaines ON/OFF supervisés, l'entité doit être réellement à `off` |
 
-## Migration et préparation de la version stable
+## Migration et recommandations pour la version stable
 
 Les anciennes files v1.0 sont conservées : **Classique + Ignorer + Strict** par défaut en l'absence de nouveaux paramètres, mêmes services et mêmes identifiants de capteurs. Les snapshots contiennent les réservations existantes sans recréer les attributions au redémarrage.
 
 Le retour à la v1.0 après utilisation des nouveaux modes n'est **pas garanti en remplaçant seulement le code** : restaure une sauvegarde cohérente des fichiers, entrées de configuration et données `.storage`.
 
-[Migration détaillée v1.0 → v1.1](docs/MIGRATION_v1.0_to_v1.1.md) · [Historique des versions](CHANGELOG.md) · [Notes de sortie v1.1 préparatoires](docs/releases/v1.1.0-draft.md) · [Validation avant publication](docs/RELEASE_CHECKLIST_v1.1.md) · [Documentation développeur](docs/DEVELOPMENT.md)
+[Migration détaillée v1.0 → v1.1](docs/MIGRATION_v1.0_to_v1.1.md) · [Historique des versions](CHANGELOG.md) · [Notes de sortie v1.1.0](docs/releases/v1.1.0.md) · [Validation avant publication](docs/RELEASE_CHECKLIST_v1.1.md) · [Documentation développeur](docs/DEVELOPMENT.md)
 
-**La publication stable v1.1.0 dépend encore de la validation et de l'approbation finales.** Ces README sont préparatoires et ne signifient pas qu'elle est déjà disponible.
+Avant toute mise à jour sur une installation en service, réalise une sauvegarde Home Assistant complète et vérifie les réservations, les états supervisés et la restauration avant la commande `resume`. Les tests CI ne remplacent pas une répétition réelle de la procédure de retour arrière.
 
 Distribué sous [licence MIT](LICENSE).
