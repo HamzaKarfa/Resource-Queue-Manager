@@ -250,3 +250,32 @@ async def test_classic_rejects_weighted_engine_request_metadata(hass: HomeAssist
             hass, "request", resource_id="h1", entity_id=ENTITIES[0],
             engine_data={"weight": 2},
         )
+
+
+async def test_weight_selector_normalizes_integral_float_but_not_fraction():
+    """HA's numeric box emits floats; engine weights remain strictly integers."""
+    from custom_components.resource_queue_manager.config_flow import _normalize_weights
+
+    assert _normalize_weights([ENTITIES[0]], {ENTITIES[0]: 25.0}, 100) == {
+        ENTITIES[0]: 25
+    }
+    for invalid in (0, -1, 1.25, True, float("nan"), 101):
+        with pytest.raises(ValueError):
+            _normalize_weights([ENTITIES[0]], {ENTITIES[0]: invalid}, 100)
+
+
+async def test_classic_setup_enforces_original_fifty_slot_limit(hass: HomeAssistant):
+    assert await async_setup_component(hass, DOMAIN, {})
+    flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    rejected = await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {
+            "name": "Oversized classic",
+            "max_active": 51,
+            "capacity_mode": "classic",
+            "strategy": "fifo",
+            "monitored_entities": [],
+        },
+    )
+    assert rejected["type"].value == "form"
+    assert rejected["errors"]["base"] == "invalid_capacity"
