@@ -73,18 +73,21 @@ def options_payload(
 async def test_setup_flow_exposes_allocation_selector_and_saves_backfill(hass: HomeAssistant):
     assert await async_setup_component(hass, DOMAIN, {})
     flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    fields = {marker.schema for marker in flow["data_schema"].schema}
-    assert "allocation_mode" in fields
     result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {
-            "name": "New Backfill",
-            "max_active": 15,
-            "capacity_mode": "weighted",
-            "allocation_mode": "backfill",
-            "recurrence_mode": "count",
-            "strategy": "fifo",
-            "monitored_entities": [],
-        },
+        flow["flow_id"], {"name": "New Backfill", "monitored_entities": []}
+    )
+    assert result["step_id"] == "setup_capacity"
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"max_active": 15, "capacity_mode": "weighted"}
+    )
+    assert result["step_id"] == "setup_scheduling"
+    assert "allocation_mode" in {m.schema for m in result["data_schema"].schema}
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"strategy": "fifo", "allocation_mode": "backfill"}
+    )
+    assert result["step_id"] == "setup_recurrence"
+    result = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"recurrence_mode": "count"}
     )
     assert result["type"].value == "create_entry"
     assert result["data"]["allocation_mode"] == "backfill"
@@ -148,27 +151,25 @@ async def test_backfill_ha_service_events_and_recurrence_during_reload(hass: Hom
     assert restored.capacity_used == 15
 
 
+async def scheduling_form(hass: HomeAssistant, entry: MockConfigEntry):
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"].value == "menu"
+    return await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": "scheduling"}
+    )
+
+
 async def test_options_change_requires_empty_queue_and_reload(hass: HomeAssistant):
     monitored = [f"light.options_{i}" for i in range(1, 5)]
     entry = await setup_queue(hass, "Options Mode", monitored, allocation_mode=None)
     manager = hass.data[DOMAIN][entry.entry_id].manager
     assert manager.allocation_mode == "strict"
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await scheduling_form(hass, entry)
     fields = {marker.schema for marker in flow["data_schema"].schema}
     assert "allocation_mode" in fields
 
     result = await hass.config_entries.options.async_configure(
-        flow["flow_id"], options_payload(monitored, allocation_mode="backfill")
-    )
-    assert result["step_id"] == "strategy"
-    result = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {"priority_order": "highest_first"}
-    )
-    assert result["step_id"] == "weights"
-    result = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {
-            monitored[0]: 10, monitored[1]: 10, monitored[2]: 3, monitored[3]: 2,
-        }
+        flow["flow_id"], {"strategy": "priority_fifo", "allocation_mode": "backfill"}
     )
     assert result["type"].value == "create_entry"
     await hass.async_block_till_done()
@@ -179,9 +180,9 @@ async def test_options_change_requires_empty_queue_and_reload(hass: HomeAssistan
                  resource_id="active", entity_id=monitored[0],
                  strategy_data={"priority": 1})
 
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await scheduling_form(hass, entry)
     rejected = await hass.config_entries.options.async_configure(
-        flow["flow_id"], options_payload(monitored, allocation_mode="strict")
+        flow["flow_id"], {"strategy": "priority_fifo", "allocation_mode": "strict"}
     )
     assert rejected["type"].value == "form"
     assert rejected["errors"]["base"] == "allocation_mode_in_use"
@@ -189,19 +190,9 @@ async def test_options_change_requires_empty_queue_and_reload(hass: HomeAssistan
     assert not hass.data[DOMAIN][entry.entry_id].manager.paused
 
     await action(hass, "release", config_entry_id=entry.entry_id, resource_id="active")
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await scheduling_form(hass, entry)
     changed = await hass.config_entries.options.async_configure(
-        flow["flow_id"], options_payload(monitored, allocation_mode="strict")
-    )
-    assert changed["step_id"] == "strategy"
-    changed = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {"priority_order": "highest_first"}
-    )
-    assert changed["step_id"] == "weights"
-    changed = await hass.config_entries.options.async_configure(
-        flow["flow_id"], {
-            monitored[0]: 10, monitored[1]: 10, monitored[2]: 3, monitored[3]: 2,
-        }
+        flow["flow_id"], {"strategy": "priority_fifo", "allocation_mode": "strict"}
     )
     assert changed["type"].value == "create_entry"
     await hass.async_block_till_done()
