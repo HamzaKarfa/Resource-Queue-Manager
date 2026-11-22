@@ -2,9 +2,9 @@
 
 Notable changes to Resource Queue Manager follow semantic versioning. GitHub tags use a leading `v`; the version in `custom_components/resource_queue_manager/manifest.json` must match the tag's numeric part.
 
-## [Unreleased] — v1.1.0 (stable release candidate)
+## [1.1.0] — stable
 
-**Stable v1.1.0 has not been published.** The features below have been integrated and automatically validated in the published [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). The stable release remains gated on final review, migration/rollback acceptance and a separately authorized publication process.
+**Stable release changes.** These capabilities were validated in the published [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). See [v1.1.0 release notes](docs/releases/v1.1.0.md) and the migration guide.
 
 ### Added
 
@@ -29,14 +29,14 @@ Notable changes to Resource Queue Manager follow semantic versioning. GitHub tag
 - [Migration v1.0.0 → v1.1.0](docs/MIGRATION_v1.0_to_v1.1.md)
 - [Backfill allocation](docs/V1.2_BACKFILL.md)
 - [Configuration menu](docs/CONFIGURATION_UI_v1.1-rc2.md)
-- [Draft stable release notes](docs/releases/v1.1.0-draft.md)
+- [v1.1.0 stable release notes](docs/releases/v1.1.0.md)
 - [Stable acceptance checklist](docs/RELEASE_CHECKLIST_v1.1.md)
 
-**Release preparation only:** do not tag `v1.1.0` or change the manifest to `1.1.0` until the explicitly approved final stable release commit.
+**Publishing:** the stable tag `v1.1.0` is created only by the guarded workflow after the explicitly authorized PR #32 merge, final automated checks and a duplicate-tag check.
 
 ## [Pre-release] — v1.1.0-rc.2
 
-Published pre-release integrating Weighted capacity, recurrence counting, Strict/Backfill, protected recovery and the redesigned Home Assistant configuration interface. This is **not** the latest stable version. See [RC2 notes](docs/releases/v1.1.0-rc.2.md).
+Published pre-release integrating Weighted capacity, recurrence counting, Strict/Backfill, protected recovery and the redesigned Home Assistant configuration interface. See [RC2 notes](docs/releases/v1.1.0-rc.2.md); this prerelease remains in the historical release list.
 
 ## [1.0.0]
 
