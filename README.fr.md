@@ -10,7 +10,10 @@
 
 > **Sécurité :** l'intégration ne commande jamais directement les relais. Tes automatisations décident d'allumer et d'éteindre les appareils après réservation. Ce logiciel n'est ni un délesteur électrique certifié, ni un système de protection thermique ; les sécurités matérielles restent indispensables.
 
-## Aperçu de la v1.1 — en développement, non publiée
+## Aperçu de la v1.1 — candidate RC, non stable
+
+> La branche `release/v1.1.0-rc.1` réunit les fonctionnalités de la v1.1 pour les essais. Le manifeste porte la version `1.1.0-rc.1`, distincte de la version stable `1.0.0`. Lire les [notes de préversion](docs/releases/v1.1.0-rc.1.md) et [la procédure de migration](docs/MIGRATION_v1.0_to_v1.1.md) avant toute installation.
+
 
 La v1.1 sépare trois responsabilités indépendantes : **l'ordonnancement** (FIFO/LIFO/FIFO prioritaire), **la capacité** (places ou unités) et **le traitement des demandes répétées** (ignorées ou comptées).
 
