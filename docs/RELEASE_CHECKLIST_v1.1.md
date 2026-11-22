@@ -2,6 +2,19 @@
 
 **UNRELEASED.** Do not merge or publish before reviewing these gates. This file intentionally does not mark manual validation complete.
 
+## Stable integration approach — one consolidation PR
+
+The feature stack is already represented by published `v1.1.0-rc.2`. To avoid duplicate/partial merges of stacked PR branches, prepare **one consolidated PR against `main`**, based on the RC2 tag plus the v1.1 stable-ready documentation.
+
+- [x] Feature code and documentation in the RC2 snapshot; the RC2 guarded CI passed Python 3.13/3.14, HA integration, HACS and hassfest.
+- [x] Individual implementation issues #12–#17, #27 and #29 completed in the pre-release.
+- [ ] Approve/merge the consolidated PR **once**, after final review, instead of merging the RC1/RC2 release PRs (which carry pre-release versions) or merging each stacked feature PR separately.
+- [ ] Before merging to main, update the manifest from `1.1.0-rc.2` to `1.1.0` in an explicitly approved stable version-bump commit and verify all final checks again.
+- [ ] After the consolidated merge, close the now-redundant stacked PRs as **superseded by the actual merged consolidation PR**; do not falsely mark them merged.
+- [ ] Keep tracking issue #11 and release-readiness issue #18 open until the stable tag is published and manual acceptance is complete.
+
+**Do not close or merge implementation PRs prematurely:** they still provide code review context and the stable integration has not reached `main`. The existing v1.0 stable publication workflows are version-pinned and require a dedicated v1.1 stable workflow.
+
 ## Préversion v1.1.0-rc.2 — Backfill et configuration organisée
 
 **Autorisation de pré-release RC2 :** le mainteneur a demandé d'intégrer la refonte des paramètres à la prochaine candidate. La publication de `v1.1.0-rc.2` reste conditionnée aux contrôles CI du workflow dédié ; aucune validation manuelle n'est implicitement considérée comme réussie.
