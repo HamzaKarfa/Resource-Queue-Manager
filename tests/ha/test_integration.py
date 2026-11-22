@@ -383,8 +383,12 @@ async def test_initial_setup_uses_number_box(hass: HomeAssistant) -> None:
         DOMAIN, context={"source": "user"}
     )
     assert setup["type"].value == "form"
+    capacity_form = await hass.config_entries.flow.async_configure(
+        setup["flow_id"], {"name": "Number box", "monitored_entities": []}
+    )
+    assert capacity_form["step_id"] == "setup_capacity"
     selector = next(
-        field for marker, field in setup["data_schema"].schema.items()
+        field for marker, field in capacity_form["data_schema"].schema.items()
         if marker.schema == "max_active"
     )
     assert isinstance(selector, NumberSelector)
@@ -479,7 +483,13 @@ async def test_second_config_flow_asks_for_name_and_strategy(
     )
     assert flow["type"].value == "form"
     fields = {marker.schema for marker in flow["data_schema"].schema}
-    assert {"name", "max_active", "strategy", "monitored_entities"} <= fields
+    assert fields == {"name", "monitored_entities"}
+    capacity = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": "Another queue", "monitored_entities": []}
+    )
+    assert {marker.schema for marker in capacity["data_schema"].schema} == {
+        "max_active", "capacity_mode"
+    }
 
 
 @pytest.fixture
@@ -523,22 +533,20 @@ async def test_config_flow_renders_provider_options_and_persists_them(
         DOMAIN, context={"source": "user"}
     )
     assert first["type"].value == "form"
-    next_step = await hass.config_entries.flow.async_configure(
-        first["flow_id"],
-        {
-            "name": "Configurable Queue",
-            "max_active": 1,
-            "strategy": "sample_policy",
-            "monitored_entities": [],
-        },
+    next_step = await guided_setup_to_policy(
+        hass, first, name="Configurable Queue", capacity=1, strategy="sample_policy"
     )
     assert next_step["type"].value == "form"
-    assert next_step["step_id"] == "strategy"
+    assert next_step["step_id"] == "setup_strategy"
     fields = {marker.schema for marker in next_step["data_schema"].schema}
     assert fields == {"threshold", "flavor"}
 
-    created = await hass.config_entries.flow.async_configure(
+    recurrence = await hass.config_entries.flow.async_configure(
         first["flow_id"], {"threshold": 5, "flavor": "two"}
+    )
+    assert recurrence["step_id"] == "setup_recurrence"
+    created = await hass.config_entries.flow.async_configure(
+        first["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert created["type"].value == "create_entry"
     assert created["data"]["strategy_config"] == {
@@ -696,22 +704,20 @@ async def test_priority_fifo_config_flow_uses_provider_fields(
         DOMAIN, context={"source": "user"}
     )
     assert flow["type"].value == "form"
-    step = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "Priority Test",
-            "max_active": 1,
-            "strategy": "priority_fifo",
-            "monitored_entities": [],
-        },
+    step = await guided_setup_to_policy(
+        hass, flow, name="Priority Test", capacity=1, strategy="priority_fifo"
     )
     assert step["type"].value == "form"
-    assert step["step_id"] == "strategy"
+    assert step["step_id"] == "setup_strategy"
     fields = {marker.schema for marker in step["data_schema"].schema}
     assert fields == {"priority_order"}
 
-    created = await hass.config_entries.flow.async_configure(
+    recurrence = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"priority_order": "lowest_first"}
+    )
+    assert recurrence["step_id"] == "setup_recurrence"
+    created = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert created["type"].value == "create_entry"
     assert created["data"]["strategy"] == "priority_fifo"
@@ -724,17 +730,18 @@ async def test_priority_fifo_ha_actions_keep_ties_and_survive_reload(
     hass: HomeAssistant, queue_entry: MockConfigEntry
 ) -> None:
     """Real service calls preserve priorities, FIFO ties and fail-closed restart."""
+    capacity = await options_form(hass, queue_entry, "capacity")
+    updated = await hass.config_entries.options.async_configure(
+        capacity["flow_id"], {"max_active": 1, "capacity_mode": "classic"}
+    )
+    assert updated["type"].value == "create_entry"
+    await hass.async_block_till_done()
     options = await options_form(hass, queue_entry, "scheduling")
     strategy_form = await hass.config_entries.options.async_configure(
-        options["flow_id"],
-        {
-            "max_active": 1,
-            "strategy": "priority_fifo",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        options["flow_id"], {"strategy": "priority_fifo", "allocation_mode": "strict"}
     )
     assert strategy_form["type"].value == "form"
-    assert strategy_form["step_id"] == "strategy"
+    assert strategy_form["step_id"] == "scheduling_details"
     chosen = await hass.config_entries.options.async_configure(
         options["flow_id"], {"priority_order": "highest_first"}
     )
