@@ -74,6 +74,9 @@ class CapacityPolicyTests(unittest.TestCase):
         class NeverGrant:
             key = "never_grant"
 
+            def resolve_request_units(self, *, engine_data, default_units, capacity):
+                return 1
+
             def can_allocate(self, *, active_units, candidate_units, capacity):
                 return False
 
