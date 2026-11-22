@@ -61,10 +61,20 @@ class SectionedOptionsFlow(ResourceQueueOptionsFlow):
 
     def _settings(self) -> dict[str, Any]:
         entry = self.config_entry
-        return {
+        settings = {
             key: entry.options.get(key, entry.data.get(key, default))
             for key, default in _DEFAULTS.items()
         }
+        # Old weighted entries may omit some per-entity defaults: the engine
+        # already uses 1 for those entities. Preserve that same behavior when
+        # editing *unrelated* settings instead of rejecting the whole form.
+        if settings[CONF_CAPACITY_MODE] == "weighted":
+            stored = settings[CONF_ENTITY_WEIGHTS] or {}
+            settings[CONF_ENTITY_WEIGHTS] = {
+                entity: stored.get(entity, 1)
+                for entity in settings[CONF_MONITORED_ENTITIES]
+            }
+        return settings
 
     async def _commit(self, updates: dict[str, Any]) -> str | None:
         """Validate a complete candidate against the live or saved queue."""
