@@ -1,47 +1,42 @@
 # Changelog
 
-All notable changes to Resource Queue Manager are documented here.
-Versions follow Semantic Versioning; the Home Assistant manifest version and
-GitHub Release tag are intended to match (`1.0.0` ↔ `v1.0.0`).
+Notable changes to Resource Queue Manager follow semantic versioning. GitHub tags use a leading `v`; the version in `custom_components/resource_queue_manager/manifest.json` must match the tag's numeric part.
 
-## [Pre-release candidate] — v1.1.0-rc.2 (Backfill + improved UI)
+## [Unreleased] — v1.1.0 (stable release candidate)
 
-- Add an independent per-queue allocation-mode setting: **Strict** (default, preserves head-of-line) or **Backfill** (grant fitting requests beyond a blocked head in existing strategy order).
-- Preserve waiting-order, frozen effective weights, recurrence counters, persistence-before-grant behavior, and capacity guarantees.
-- Add EN/FR Home Assistant setup/options selectors and allocation-mode attributes in existing sensors/grant events.
-- Old queues and snapshots continue in `strict`. Changing modes requires no outstanding reservations or waiting requests.
-- Backfill may bypass a blocked higher-priority or older request and **does not prevent starvation**; no automatic priority aging or device control.
-
-- Replace the monolithic Home Assistant options dialog with a native four-category menu for resources/weights, capacity, scheduling/admission and recurrence.
-- Guide first-time setup through independent steps; preserve unrelated options and frozen request metadata on individual edits.
-- Keep the queue running while navigating menus; pause/reload only after a configuration change is accepted.
-- Add EN/FR translations for all new setup/options steps and Home Assistant end-to-end regression tests.
-
-These additions are staged for **v1.1.0-rc.2**, not included in immutable `v1.1.0-rc.1`; stable `v1.0.0` is unchanged.
-
-## [Unreleased] — planned v1.1.0
-
-**Development candidate only.** The features below are in stacked draft PRs and have not been published to Marketplace/HACS.
+**Stable v1.1.0 has not been published.** The features below have been integrated and automatically validated in the published [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). The stable release remains gated on final review, migration/rollback acceptance and a separately authorized publication process.
 
 ### Added
-- Pure-Python capacity provider registry with `classic` (v1-compatible slots) and `weighted` (single shared integer unit budget, no additional slot limit).
-- Configurable integer weight per supervised entity (default 1); optional `engine_data.weight` override on one new request, frozen while pending, active and after reload.
-- Independent `ignore`/`count` recurrence providers; identical pending resource IDs can be counted without duplicate queue entries, reordering or new reservations.
-- Capacity/recurrence selectors in native HA config/options forms with English/French translations.
-- Exposed `capacity_mode`, `capacity_unit`, total/used/remaining, effective request weights and occurrence counts as attributes on the existing four sensors.
-- Extended persisted grant events with capacity mode, effective weight and occurrence count.
-- Focused tests for 12 strategy × capacity × recurrence combinations, concurrent queue isolation, persistence-before-event, and fail-closed snapshot migration.
 
-### Maintained
-- Existing v1.0 queues default to `classic + ignore` with original service YAML, sensor IDs, strategy ordering and supervised OFF rules.
-- Every queue starts paused after reload and requires an explicit `resume`; invalid snapshots never reset silently.
-- No direct actuation, global budget, watts calculation, message-content deduplication, priority aging or preemption.
+- **Weighted capacity**: one shared budget of 1–100000 integer units per queue, with default weight 1 per supervised entity and configurable defaults.
+- **Immutable per-request cost**: `engine_data.weight` overrides an entity's configured default only for a new Weighted request. Active/pending weights survive restart and release returns exactly the frozen cost.
+- **Configurable allocation**: `strict` preserves head-of-line blocking; `backfill` grants fitting requests behind a non-fitting head without changing the ordering or preempting active work.
+- **Recurrence counting**: `ignore` (default) or `count` repeated requests for one waiting `resource_id`, without new queue entries or extra capacity usage. Active duplicates do not increment.
+- **Guided Home Assistant setup** with conditional capacity/priority/weight screens, and a four-category **Configure** menu for resources, capacity, scheduling/allocation and repetitions.
+- **Richer diagnostics** on the four existing sensors: `capacity_mode`, `capacity_unit`, `capacity_total`, `capacity_used`, `capacity_remaining`, `effective_weights`, `allocation_mode`, `recurrence_mode`, `occurrence_counts`.
+- **Extended grant events**: `capacity_mode`, `allocation_mode`, `effective_weight` and `occurrences` alongside the original resource/entity/config entry identifiers.
+- **Migration and tests** for legacy snapshots, paused recovery, validation of invalid weights/counts, multiple queues, Strict/Backfill, persistence-before-event and English/French translations.
 
-### Migration / release
-See [v1.0 → v1.1 migration guide](docs/MIGRATION_v1.0_to_v1.1.md),
-[draft release notes](docs/releases/v1.1.0-draft.md) and
-[unverified manual release gates](docs/RELEASE_CHECKLIST_v1.1.md).
-The manifest stays at `1.0.0` until a separately approved release commit.
+### Preserved compatibility and guarantees
+
+- Existing configurations without the new fields default to **Classic + Strict + Ignore**; no new constraints on old Classic slot use.
+- Existing `request`/`release`/`cancel`/`resume` action names, `strategy_data`, `config_entry_id` routing, four sensor entity IDs, and FIFO/LIFO/Priority FIFO strategy ordering.
+- Each queue still restores **paused**. An explicit `resume` is necessary after checking supervised states. Invalid/unsafe snapshots must not silently discard active reservations.
+- No active preemption, direct physical device control, global inter-queue capacity, watts calculation, message-content deduplication, automatic multi-job execution, priority aging or anti-starvation guarantee.
+
+### Migration and release
+
+- [Migration v1.0.0 → v1.1.0](docs/MIGRATION_v1.0_to_v1.1.md)
+- [Backfill allocation](docs/V1.2_BACKFILL.md)
+- [Configuration menu](docs/CONFIGURATION_UI_v1.1-rc2.md)
+- [Draft stable release notes](docs/releases/v1.1.0-draft.md)
+- [Stable acceptance checklist](docs/RELEASE_CHECKLIST_v1.1.md)
+
+**Release preparation only:** do not tag `v1.1.0` or change the manifest to `1.1.0` until the explicitly approved final stable release commit.
+
+## [Pre-release] — v1.1.0-rc.2
+
+Published pre-release integrating Weighted capacity, recurrence counting, Strict/Backfill, protected recovery and the redesigned Home Assistant configuration interface. This is **not** the latest stable version. See [RC2 notes](docs/releases/v1.1.0-rc.2.md).
 
 ## [1.0.0]
 
