@@ -26,6 +26,7 @@ from .const import (
     CONF_CAPACITY_MODE,
     CONF_ENTITY_WEIGHTS,
     CONF_RECURRENCE_MODE,
+    CONF_ALLOCATION_MODE,
     CONF_MONITORED_ENTITIES,
     CONF_NAME,
     CONF_STRATEGY,
@@ -35,6 +36,7 @@ from .const import (
 )
 from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE, get_capacity_policy
 from .recurrence import DEFAULT_RECURRENCE_MODE, RECURRENCE_PROVIDERS
+from .allocation import ALLOCATION_MODES, DEFAULT_ALLOCATION_MODE
 from .strategies import (
     DEFAULT_STRATEGY,
     PROVIDERS,
@@ -88,6 +90,24 @@ def recurrence_mode_selector(language: str = "en") -> SelectSelector:
                     label=translated.get(key, provider.label) if french else provider.label,
                 )
                 for key, provider in RECURRENCE_PROVIDERS.items()
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def allocation_mode_selector(language: str = "en") -> SelectSelector:
+    """Choose admission traversal independently of scheduling and capacity."""
+    french = language.lower().startswith("fr")
+    labels = {
+        "strict": "Strict — ordre prioritaire" if french else "Strict — block at first request that cannot fit",
+        "backfill": "Backfill — utiliser les unités libres" if french else "Backfill — grant fitting requests further in the queue",
+    }
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(value=key, label=labels[key])
+                for key in ("strict", "backfill")
             ],
             mode=SelectSelectorMode.DROPDOWN,
         )
@@ -223,6 +243,8 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_strategy"
             elif user_input[CONF_RECURRENCE_MODE] not in RECURRENCE_PROVIDERS:
                 errors["base"] = "invalid_recurrence_mode"
+            elif user_input.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE) not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
             elif not _capacity_configuration_valid(
                 user_input[CONF_CAPACITY_MODE], int(user_input[CONF_MAX_ACTIVE])
             ):
@@ -239,6 +261,7 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_STRATEGY: user_input[CONF_STRATEGY],
                     CONF_CAPACITY_MODE: user_input[CONF_CAPACITY_MODE],
                     CONF_RECURRENCE_MODE: user_input[CONF_RECURRENCE_MODE],
+                    CONF_ALLOCATION_MODE: user_input.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
                     CONF_MONITORED_ENTITIES: list(
                         user_input.get(CONF_MONITORED_ENTITIES, [])
                     ),
@@ -267,6 +290,10 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_RECURRENCE_MODE,
                     default=(user_input or {}).get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
                 ): recurrence_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_ALLOCATION_MODE,
+                    default=(user_input or {}).get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
+                ): allocation_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES,
                     default=(user_input or {}).get(CONF_MONITORED_ENTITIES, []),
@@ -381,10 +408,15 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
             CONF_RECURRENCE_MODE,
             entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
         )
+        current_allocation = entry.options.get(
+            CONF_ALLOCATION_MODE,
+            entry.data.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
+        )
         new_limit = current_limit
         new_strategy = current_strategy
         new_mode = current_mode
         new_recurrence = current_recurrence
+        new_allocation = current_allocation
 
         if user_input is not None:
             selected = list(user_input.get(CONF_MONITORED_ENTITIES, []))
@@ -392,12 +424,15 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
             new_strategy = user_input[CONF_STRATEGY]
             new_mode = user_input[CONF_CAPACITY_MODE]
             new_recurrence = user_input[CONF_RECURRENCE_MODE]
+            new_allocation = user_input.get(CONF_ALLOCATION_MODE, current_allocation)
             if new_strategy not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
             elif new_mode not in CAPACITY_PROVIDERS:
                 errors["base"] = "invalid_capacity_mode"
             elif new_recurrence not in RECURRENCE_PROVIDERS:
                 errors["base"] = "invalid_recurrence_mode"
+            elif new_allocation not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
             elif not _capacity_configuration_valid(new_mode, new_limit):
                 errors["base"] = "invalid_capacity"
             elif _overlapping_entities(self.hass, selected, entry.entry_id):
@@ -429,6 +464,10 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                         saved["active"] or saved["waiting"]
                     ):
                         errors["base"] = "recurrence_mode_in_use"
+                    elif new_allocation != runtime.manager.allocation_mode and (
+                        saved["active"] or saved["waiting"]
+                    ):
+                        errors["base"] = "allocation_mode_in_use"
                     elif new_mode == runtime.manager.capacity_mode:
                         try:
                             runtime.manager.queue.validate_capacity_limit(new_limit)
@@ -477,6 +516,12 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                     ) and (active or waiting):
                         errors["base"] = "recurrence_mode_in_use"
                     if not errors and (
+                        new_allocation != saved.get(
+                            "allocation_mode", DEFAULT_ALLOCATION_MODE
+                        )
+                    ) and (active or waiting):
+                        errors["base"] = "allocation_mode_in_use"
+                    if not errors and (
                         new_strategy != saved.get("strategy", current_strategy)
                         or (
                             not pending_strategy
@@ -496,6 +541,7 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                     CONF_STRATEGY: new_strategy,
                     CONF_CAPACITY_MODE: new_mode,
                     CONF_RECURRENCE_MODE: new_recurrence,
+                    CONF_ALLOCATION_MODE: new_allocation,
                 }
                 self._pending_options = pending
                 if has_fields and not strategy_ready:
@@ -524,6 +570,9 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                 vol.Required(
                     CONF_RECURRENCE_MODE, default=new_recurrence
                 ): recurrence_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_ALLOCATION_MODE, default=new_allocation
+                ): allocation_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES, default=selected
                 ): ENTITIES_SELECTOR,
