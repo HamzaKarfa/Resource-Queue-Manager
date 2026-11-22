@@ -18,6 +18,16 @@
 
 > **Important:** Resource Queue Manager never switches devices ON or OFF. Your automations do that after obtaining a grant. It is **not a certified electrical load-shedding, thermal safety or overcurrent protection device**. Manual commands, external automation and unsupervised equipment can bypass it.
 
+## v1.2 development — optional backfill allocation (not released)
+
+A new per-queue **allocation mode** lets you keep the default **Strict** head-of-line behavior or select **Backfill** to grant later requests that fit remaining capacity. Priority FIFO/FIFO/LIFO still determine the waiting order; Backfill may bypass a higher-priority request **only when it does not fit**, and may starve large requests under sustained small arrivals. Classic capacity remains compatible and usually behaves identically under either mode.
+
+For example, with 15 total units, an active weight-10 reservation and a waiting weight-10 request, Backfill can still grant following weights 3 and 2. In Strict mode those requests all remain waiting until the head fits.
+
+Switching allocation modes requires an empty queue. The four existing sensors gain `allocation_mode`, and grant events include it. Legacy configurations and snapshots default to `strict`. This feature is on an **unreleased feature branch**, not in tagged `v1.1.0-rc.1`.
+
+See [Backfill behavior, risks and configuration](docs/V1.2_BACKFILL.md).
+
 ## v1.1 release candidate — not stable
 
 > **Pre-release v1.1.0-rc.1:** This branch is the integrated candidate containing the v1.1 feature stack. It is intended for testing only; `main` and stable v1.0.0 remain unchanged. Read the [RC notes](docs/releases/v1.1.0-rc.1.md), [migration guide](docs/MIGRATION_v1.0_to_v1.1.md) and [manual acceptance gates](docs/RELEASE_CHECKLIST_v1.1.md) before installing.
