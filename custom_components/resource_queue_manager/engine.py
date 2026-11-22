@@ -1,7 +1,7 @@
 """Strategy-independent, pure-Python reservation engine.
 
-Queue policy controls *only the next-grant order*. Active reservations,
-capacity, de-duplication and request persistence belong to this engine.
+Queue strategy controls *only the next-grant order*. Capacity policies
+validate admission; active state, de-duplication and persistence remain here.
 Physical device switching remains strictly outside the engine.
 """
 
@@ -9,6 +9,7 @@ from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from .capacity import DEFAULT_CAPACITY_MODE, get_capacity_policy
 from .strategies import (
     DEFAULT_STRATEGY,
     QueueRequest,
@@ -35,6 +36,7 @@ class ResourceQueue:
         max_active: int = 3,
         strategy: str = DEFAULT_STRATEGY,
         strategy_config: Mapping[str, object] | None = None,
+        capacity_mode: str = DEFAULT_CAPACITY_MODE,
     ) -> None:
         if (
             type(max_active) is not int
@@ -45,6 +47,8 @@ class ResourceQueue:
         self.strategy = strategy
         self.strategy_config = validate_strategy_config(strategy, strategy_config)
         self._strategy = get_strategy(strategy, self.strategy_config)
+        self.capacity_mode = capacity_mode
+        self._capacity_policy = get_capacity_policy(capacity_mode)
         self._active: dict[str, None] = {}
         self._waiting: deque[str] = deque()
         self._requests: dict[str, QueueRequest] = {}
@@ -58,9 +62,10 @@ class ResourceQueue:
         strategy: str = DEFAULT_STRATEGY,
         strategy_config: Mapping[str, object] | None = None,
         request_data: object | None = None,
+        capacity_mode: str = DEFAULT_CAPACITY_MODE,
     ) -> "ResourceQueue":
         """Restore grants and metadata exactly; never allocate while loading."""
-        instance = cls(max_active, strategy, strategy_config)
+        instance = cls(max_active, strategy, strategy_config, capacity_mode)
         if not isinstance(active, list) or not isinstance(waiting, list):
             raise ValueError("stored active and waiting must be lists")
         combined = active + waiting
@@ -73,11 +78,6 @@ class ResourceQueue:
             raise ValueError("stored resource IDs must be normalized strings")
         if len(combined) != len(set(combined)):
             raise ValueError("duplicate resource ID in saved queue")
-        if len(active) > max_active:
-            raise ValueError("saved reservations exceed current limit")
-        if waiting and len(active) < max_active:
-            raise ValueError("saved waiting queue has unallocated free slots")
-
         if request_data is None:
             request_data = {}
         if not isinstance(request_data, dict):
@@ -95,6 +95,13 @@ class ResourceQueue:
         instance._active = dict.fromkeys(active)
         instance._waiting = deque(waiting)
         instance._requests = restored
+        # Policies own capacity invariants; classic retains the v1.0 rules.
+        # Until weighted request metadata is introduced, each request costs 1.
+        instance._capacity_policy.validate_restored(
+            active_units=(1,) * len(active),
+            waiting_units=(1,) * len(waiting),
+            capacity=max_active,
+        )
         return instance
 
     def request(
@@ -151,10 +158,19 @@ class ResourceQueue:
 
     def _allocate(self) -> QueueResult:
         newly_granted: list[str] = []
-        while self._waiting and len(self._active) < self.max_active:
-            candidate = self._waiting.popleft()
+        while self._waiting:
+            candidate = self._waiting[0]
             if candidate in self._active:
+                self._waiting.popleft()
                 continue
+            # Never skip the strategy-selected head of the waiting queue.
+            if not self._capacity_policy.can_allocate(
+                active_units=(1,) * len(self._active),
+                candidate_units=1,
+                capacity=self.max_active,
+            ):
+                break
+            self._waiting.popleft()
             self._active[candidate] = None
             newly_granted.append(candidate)
         return QueueResult(
