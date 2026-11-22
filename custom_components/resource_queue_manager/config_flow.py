@@ -25,6 +25,7 @@ from .const import (
     CONF_MAX_ACTIVE,
     CONF_CAPACITY_MODE,
     CONF_ENTITY_WEIGHTS,
+    CONF_RECURRENCE_MODE,
     CONF_MONITORED_ENTITIES,
     CONF_NAME,
     CONF_STRATEGY,
@@ -33,6 +34,7 @@ from .const import (
     DOMAIN,
 )
 from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE, get_capacity_policy
+from .recurrence import DEFAULT_RECURRENCE_MODE, RECURRENCE_PROVIDERS
 from .strategies import (
     DEFAULT_STRATEGY,
     PROVIDERS,
@@ -65,6 +67,27 @@ def capacity_mode_selector(language: str = "en") -> SelectSelector:
                     label=translated.get(key, provider.label) if french else provider.label,
                 )
                 for key, provider in CAPACITY_PROVIDERS.items()
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def recurrence_mode_selector(language: str = "en") -> SelectSelector:
+    """Declare duplicate handling independently of scheduling and capacity."""
+    french = language.lower().startswith("fr")
+    translated = {
+        "ignore": "Ignorer les répétitions",
+        "count": "Compter les répétitions en attente",
+    }
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(
+                    value=key,
+                    label=translated.get(key, provider.label) if french else provider.label,
+                )
+                for key, provider in RECURRENCE_PROVIDERS.items()
             ],
             mode=SelectSelectorMode.DROPDOWN,
         )
@@ -198,6 +221,8 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "name_in_use"
             elif user_input[CONF_STRATEGY] not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
+            elif user_input[CONF_RECURRENCE_MODE] not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
             elif not _capacity_configuration_valid(
                 user_input[CONF_CAPACITY_MODE], int(user_input[CONF_MAX_ACTIVE])
             ):
@@ -213,6 +238,7 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_MAX_ACTIVE: int(user_input[CONF_MAX_ACTIVE]),
                     CONF_STRATEGY: user_input[CONF_STRATEGY],
                     CONF_CAPACITY_MODE: user_input[CONF_CAPACITY_MODE],
+                    CONF_RECURRENCE_MODE: user_input[CONF_RECURRENCE_MODE],
                     CONF_MONITORED_ENTITIES: list(
                         user_input.get(CONF_MONITORED_ENTITIES, [])
                     ),
@@ -237,6 +263,10 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_CAPACITY_MODE,
                     default=(user_input or {}).get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE),
                 ): capacity_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_RECURRENCE_MODE,
+                    default=(user_input or {}).get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
+                ): recurrence_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES,
                     default=(user_input or {}).get(CONF_MONITORED_ENTITIES, []),
@@ -347,19 +377,27 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
         current_mode = entry.options.get(
             CONF_CAPACITY_MODE, entry.data.get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE)
         )
+        current_recurrence = entry.options.get(
+            CONF_RECURRENCE_MODE,
+            entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
+        )
         new_limit = current_limit
         new_strategy = current_strategy
         new_mode = current_mode
+        new_recurrence = current_recurrence
 
         if user_input is not None:
             selected = list(user_input.get(CONF_MONITORED_ENTITIES, []))
             new_limit = int(user_input[CONF_MAX_ACTIVE])
             new_strategy = user_input[CONF_STRATEGY]
             new_mode = user_input[CONF_CAPACITY_MODE]
+            new_recurrence = user_input[CONF_RECURRENCE_MODE]
             if new_strategy not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
             elif new_mode not in CAPACITY_PROVIDERS:
                 errors["base"] = "invalid_capacity_mode"
+            elif new_recurrence not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
             elif not _capacity_configuration_valid(new_mode, new_limit):
                 errors["base"] = "invalid_capacity"
             elif _overlapping_entities(self.hass, selected, entry.entry_id):
@@ -387,6 +425,10 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                         saved["active"] or saved["waiting"]
                     ):
                         errors["base"] = "capacity_mode_in_use"
+                    elif new_recurrence != runtime.manager.recurrence_mode and (
+                        saved["active"] or saved["waiting"]
+                    ):
+                        errors["base"] = "recurrence_mode_in_use"
                     elif new_mode == runtime.manager.capacity_mode:
                         try:
                             runtime.manager.queue.validate_capacity_limit(new_limit)
@@ -429,6 +471,12 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                         if capacity_error is not None:
                             errors["base"] = capacity_error
                     if not errors and (
+                        new_recurrence != saved.get(
+                            "recurrence_mode", DEFAULT_RECURRENCE_MODE
+                        )
+                    ) and (active or waiting):
+                        errors["base"] = "recurrence_mode_in_use"
+                    if not errors and (
                         new_strategy != saved.get("strategy", current_strategy)
                         or (
                             not pending_strategy
@@ -447,6 +495,7 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                     CONF_MAX_ACTIVE: new_limit,
                     CONF_STRATEGY: new_strategy,
                     CONF_CAPACITY_MODE: new_mode,
+                    CONF_RECURRENCE_MODE: new_recurrence,
                 }
                 self._pending_options = pending
                 if has_fields and not strategy_ready:
@@ -472,6 +521,9 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                 vol.Required(
                     CONF_CAPACITY_MODE, default=new_mode
                 ): capacity_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_RECURRENCE_MODE, default=new_recurrence
+                ): recurrence_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES, default=selected
                 ): ENTITIES_SELECTOR,
