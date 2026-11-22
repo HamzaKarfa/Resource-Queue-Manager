@@ -23,6 +23,8 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_MAX_ACTIVE,
+    CONF_CAPACITY_MODE,
+    CONF_ENTITY_WEIGHTS,
     CONF_MONITORED_ENTITIES,
     CONF_NAME,
     CONF_STRATEGY,
@@ -30,6 +32,7 @@ from .const import (
     DEFAULT_MAX_ACTIVE,
     DOMAIN,
 )
+from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE, get_capacity_policy
 from .strategies import (
     DEFAULT_STRATEGY,
     PROVIDERS,
@@ -41,9 +44,100 @@ from .strategy_forms import strategy_form_schema
 
 STORAGE_VERSION = 1
 
+# Support larger unit budgets while retaining the historic classic limit.
 MAX_ACTIVE_SELECTOR = NumberSelector(
-    NumberSelectorConfig(min=1, max=50, step=1, mode=NumberSelectorMode.BOX)
+    NumberSelectorConfig(min=1, max=100000, step=1, mode=NumberSelectorMode.BOX)
 )
+
+
+def capacity_mode_selector(language: str = "en") -> SelectSelector:
+    """Capacity is independent of the selected ordering strategy."""
+    french = language.lower().startswith("fr")
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(value="classic", label="Classique (places)" if french else "Classic (slots)"),
+                SelectOptionDict(value="weighted", label="Pondéré (unités)" if french else "Weighted (units)"),
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _capacity_configuration_valid(mode: str, capacity: int) -> bool:
+    """Classic retains 1-50 slots; weighted supports 1-100000 units."""
+    return (
+        mode in CAPACITY_PROVIDERS
+        and type(capacity) is int
+        and 1 <= capacity <= (50 if mode == "classic" else 100000)
+    )
+
+
+def _weights_schema(
+    entities: list[str], defaults: dict[str, int], capacity: int
+) -> vol.Schema:
+    """Show a native number box for each supervised entity ID."""
+    return vol.Schema({
+        vol.Required(entity, default=defaults.get(entity, 1)): NumberSelector(
+            NumberSelectorConfig(
+                min=1, max=capacity, step=1, mode=NumberSelectorMode.BOX
+            )
+        )
+        for entity in entities
+    })
+
+
+def _normalize_weights(
+    entities: list[str], values: dict[str, Any], capacity: int
+) -> dict[str, int]:
+    if set(values) != set(entities):
+        raise ValueError("Every supervised entity requires a default weight")
+    if any(
+        type(value) is not int or value < 1 or value > capacity
+        for value in values.values()
+    ):
+        raise ValueError("Weights must be positive integers within total capacity")
+    return dict(values)
+
+
+def _saved_capacity_error(
+    saved: dict, new_mode: str, new_limit: int
+) -> str | None:
+    """Check unloaded reservations using their saved, immutable effective weights."""
+    active = saved.get("active", [])
+    waiting = saved.get("waiting", [])
+    mode = saved.get("capacity_mode", DEFAULT_CAPACITY_MODE)
+    if mode not in CAPACITY_PROVIDERS:
+        raise ValueError("Unknown stored capacity mode")
+    if mode != new_mode and (active or waiting):
+        return "capacity_mode_in_use"
+    if mode == "classic":
+        if saved.get("engine_request_data"):
+            raise ValueError("Unexpected classic engine weights")
+        units = {resource: 1 for resource in (*active, *waiting)}
+    else:
+        metadata = saved.get("engine_request_data", {})
+        if not isinstance(metadata, dict) or set(metadata) != set((*active, *waiting)):
+            raise ValueError("Missing frozen weights")
+        units = {}
+        for resource in (*active, *waiting):
+            data = metadata[resource]
+            if not isinstance(data, dict) or set(data) != {"weight"}:
+                raise ValueError("Invalid frozen weight metadata")
+            value = data["weight"]
+            if type(value) is not int or value < 1:
+                raise ValueError("Invalid frozen weight")
+            units[resource] = value
+    try:
+        get_capacity_policy(mode).validate_limit(
+            active_units=tuple(units[r] for r in active),
+            waiting_units=tuple(units[r] for r in waiting),
+            capacity=new_limit,
+        )
+    except ValueError:
+        return "max_active_below_reserved"
+    return None
+
 def strategy_selector(language: str = "en") -> SelectSelector:
     """Refresh provider choices in the user's Home Assistant language."""
     return SelectSelector(
@@ -90,6 +184,10 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "name_in_use"
             elif user_input[CONF_STRATEGY] not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
+            elif not _capacity_configuration_valid(
+                user_input[CONF_CAPACITY_MODE], int(user_input[CONF_MAX_ACTIVE])
+            ):
+                errors["base"] = "invalid_capacity"
             elif _overlapping_entities(
                 self.hass, user_input.get(CONF_MONITORED_ENTITIES, [])
             ):
@@ -100,6 +198,7 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_NAME: name,
                     CONF_MAX_ACTIVE: int(user_input[CONF_MAX_ACTIVE]),
                     CONF_STRATEGY: user_input[CONF_STRATEGY],
+                    CONF_CAPACITY_MODE: user_input[CONF_CAPACITY_MODE],
                     CONF_MONITORED_ENTITIES: list(
                         user_input.get(CONF_MONITORED_ENTITIES, [])
                     ),
@@ -107,7 +206,7 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if get_provider(user_input[CONF_STRATEGY]).config_fields:
                     return await self.async_step_strategy()
                 self._pending_data[CONF_STRATEGY_CONFIG] = {}
-                return self.async_create_entry(title=name, data=self._pending_data)
+                return await self._finish_setup()
 
         schema = vol.Schema(
             {
@@ -120,6 +219,10 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_STRATEGY,
                     default=(user_input or {}).get(CONF_STRATEGY, DEFAULT_STRATEGY),
                 ): strategy_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_CAPACITY_MODE,
+                    default=(user_input or {}).get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE),
+                ): capacity_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES,
                     default=(user_input or {}).get(CONF_MONITORED_ENTITIES, []),
@@ -150,13 +253,53 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "entities_in_use_elsewhere"
                 else:
                     data = dict(self._pending_data)
-                    data[CONF_STRATEGY_CONFIG] = normalized
-                    return self.async_create_entry(title=data[CONF_NAME], data=data)
+                    self._pending_data[CONF_STRATEGY_CONFIG] = normalized
+                    return await self._finish_setup()
         return self.async_show_form(
             step_id="strategy",
             data_schema=strategy_form_schema(
                 strategy, user_input, self.hass.config.language
             ),
+            errors=errors,
+        )
+
+    async def _finish_setup(self):
+        """Complete classic setup, or ask for default weights in weighted mode."""
+        if (
+            self._pending_data[CONF_CAPACITY_MODE] == "weighted"
+            and self._pending_data[CONF_MONITORED_ENTITIES]
+        ):
+            return await self.async_step_weights()
+        self._pending_data[CONF_ENTITY_WEIGHTS] = {}
+        return self.async_create_entry(
+            title=self._pending_data[CONF_NAME], data=self._pending_data
+        )
+
+    async def async_step_weights(self, user_input: dict | None = None):
+        """Collect the supervised entities' default unit costs."""
+        data = self._pending_data
+        entities = data[CONF_MONITORED_ENTITIES]
+        capacity = data[CONF_MAX_ACTIVE]
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                weights = _normalize_weights(entities, user_input, capacity)
+            except ValueError:
+                errors["base"] = "invalid_weights"
+            else:
+                if any(
+                    entry.title == data[CONF_NAME]
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                ):
+                    errors["base"] = "name_in_use"
+                elif _overlapping_entities(self.hass, entities):
+                    errors["base"] = "entities_in_use_elsewhere"
+                else:
+                    data[CONF_ENTITY_WEIGHTS] = weights
+                    return self.async_create_entry(title=data[CONF_NAME], data=data)
+        return self.async_show_form(
+            step_id="weights",
+            data_schema=_weights_schema(entities, user_input or {}, capacity),
             errors=errors,
         )
 
