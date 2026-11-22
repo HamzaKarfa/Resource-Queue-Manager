@@ -4,7 +4,7 @@ All notable changes to Resource Queue Manager are documented here.
 Versions follow Semantic Versioning; the Home Assistant manifest version and
 GitHub Release tag are intended to match (`1.0.0` ↔ `v1.0.0`).
 
-## [Unreleased] — planned v1.2 allocation enhancement
+## [Pre-release candidate] — v1.1.0-rc.2 (Backfill + improved UI)
 
 - Add an independent per-queue allocation-mode setting: **Strict** (default, preserves head-of-line) or **Backfill** (grant fitting requests beyond a blocked head in existing strategy order).
 - Preserve waiting-order, frozen effective weights, recurrence counters, persistence-before-grant behavior, and capacity guarantees.
@@ -12,7 +12,12 @@ GitHub Release tag are intended to match (`1.0.0` ↔ `v1.0.0`).
 - Old queues and snapshots continue in `strict`. Changing modes requires no outstanding reservations or waiting requests.
 - Backfill may bypass a blocked higher-priority or older request and **does not prevent starvation**; no automatic priority aging or device control.
 
-This entry is **not part of v1.1.0-rc.1** and is not yet released.
+- Replace the monolithic Home Assistant options dialog with a native four-category menu for resources/weights, capacity, scheduling/admission and recurrence.
+- Guide first-time setup through independent steps; preserve unrelated options and frozen request metadata on individual edits.
+- Keep the queue running while navigating menus; pause/reload only after a configuration change is accepted.
+- Add EN/FR translations for all new setup/options steps and Home Assistant end-to-end regression tests.
+
+These additions are staged for **v1.1.0-rc.2**, not included in immutable `v1.1.0-rc.1`; stable `v1.0.0` is unchanged.
 
 ## [Unreleased] — planned v1.1.0
 
