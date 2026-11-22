@@ -8,7 +8,6 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import OptionsFlowWithReload
 from homeassistant.helpers.storage import Store
 
 from .allocation import ALLOCATION_MODES, DEFAULT_ALLOCATION_MODE
@@ -41,6 +40,7 @@ from .config_flow import (
     capacity_mode_selector,
     recurrence_mode_selector,
     strategy_selector,
+    ResourceQueueOptionsFlow,
 )
 
 
@@ -56,7 +56,7 @@ _DEFAULTS = {
 }
 
 
-class SectionedOptionsFlow(OptionsFlowWithReload):
+class SectionedOptionsFlow(ResourceQueueOptionsFlow):
     """Native HA menu containing only the chosen category's settings."""
 
     def _settings(self) -> dict[str, Any]:
@@ -165,7 +165,9 @@ class SectionedOptionsFlow(OptionsFlowWithReload):
         return self.async_create_entry(data=self._next_options)
 
     async def async_step_init(self, user_input: dict | None = None):
-        """The main configuration dialog is a short, translated category menu."""
+        """Present the native menu; preserve old direct config inputs for API clients."""
+        if user_input is not None:
+            return await super().async_step_init(user_input)
         return self.async_show_menu(
             step_id="init",
             menu_options=["resources", "capacity", "scheduling", "recurrence"],
