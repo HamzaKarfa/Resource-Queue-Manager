@@ -36,6 +36,46 @@
       "weights": {
         "title": "Poids par défaut des entités",
         "description": "Saisissez un poids entier positif pour chaque entité supervisée. Ces valeurs ne concernent que les nouvelles demandes ; engine_data.weight peut remplacer le poids pour une demande. Chaque champ correspond à l'identifiant d'entité."
+      },
+      "setup_capacity": {
+        "title": "Capacité",
+        "data": {
+          "capacity_mode": "Mode de capacité",
+          "max_active": "Limite de capacité"
+        },
+        "data_description": {
+          "capacity_mode": "Classique compte les places actives ; pondéré compte les unités indépendamment de FIFO/LIFO/FIFO prioritaire.",
+          "max_active": "Classique : 1 à 50 places simultanées. Pondéré : 1 à 100000 unités communes (pas des watts)."
+        }
+      },
+      "setup_scheduling": {
+        "title": "Ordonnancement et attribution",
+        "data": {
+          "strategy": "Stratégie d'ordonnancement",
+          "allocation_mode": "Mode d'attribution"
+        },
+        "data_description": {
+          "strategy": "FIFO, LIFO ou FIFO prioritaire. La file doit être vide pour changer de stratégie ou de paramètres.",
+          "allocation_mode": "Strict (par défaut) : arrêt si la première demande en attente ne rentre pas. Backfill : les demandes suivantes pouvant utiliser les unités restantes sont accordées sans réordonner les demandes bloquées. Une grosse demande, même prioritaire, peut rester longtemps en attente."
+        }
+      },
+      "setup_strategy": {
+        "title": "Paramètres de priorité",
+        "data": {
+          "priority_order": "Ordre des priorités"
+        },
+        "data_description": {
+          "priority_order": "Plus forte d'abord : 10 avant 1. Plus faible d'abord : 1 avant 10. À priorité égale, ordre d'arrivée conservé."
+        }
+      },
+      "setup_recurrence": {
+        "title": "Demandes répétées",
+        "data": {
+          "recurrence_mode": "Gestion des demandes répétées"
+        },
+        "data_description": {
+          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité."
+        }
       }
     },
     "error": {
@@ -136,6 +176,18 @@
           "capacity_mode": "Classique compte les places actives ; pondéré compte les unités indépendamment de FIFO/LIFO/FIFO prioritaire.",
           "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité.",
           "allocation_mode": "Strict (par défaut) : arrêt si la première demande en attente ne rentre pas. Backfill : les demandes suivantes pouvant utiliser les unités restantes sont accordées sans réordonner les demandes bloquées. Une grosse demande, même prioritaire, peut rester longtemps en attente."
+        },
+        "menu_options": {
+          "resources": "Ressources supervisées",
+          "capacity": "Capacité",
+          "scheduling": "Ordonnancement et attribution",
+          "recurrence": "Demandes répétées"
+        },
+        "menu_option_descriptions": {
+          "resources": "Choisir les entités supervisées et leurs poids par défaut.",
+          "capacity": "Choisir les places classiques ou les unités pondérées, puis la limite.",
+          "scheduling": "Choisir FIFO, LIFO ou FIFO prioritaire ainsi que Strict ou Backfill.",
+          "recurrence": "Ignorer ou compter les répétitions de demandes en attente."
         }
       },
       "strategy": {
@@ -151,6 +203,63 @@
       "weights": {
         "title": "Poids par défaut des entités",
         "description": "Saisissez un poids entier positif pour chaque entité supervisée. Ces valeurs ne concernent que les nouvelles demandes ; engine_data.weight peut remplacer le poids pour une demande. Chaque champ correspond à l'identifiant d'entité."
+      },
+      "resources": {
+        "title": "Ressources supervisées",
+        "data": {
+          "monitored_entities": "Entités supervisées"
+        },
+        "data_description": {
+          "monitored_entities": "Sélectionnez toute entité Home Assistant, dont input_boolean, input_number, input_text, number et text. Les valeurs non ON/OFF ne permettent pas de vérifier un arrêt physique."
+        }
+      },
+      "capacity": {
+        "title": "Capacité",
+        "data": {
+          "capacity_mode": "Mode de capacité",
+          "max_active": "Limite de capacité"
+        },
+        "data_description": {
+          "capacity_mode": "Classique compte les places actives ; pondéré compte les unités indépendamment de FIFO/LIFO/FIFO prioritaire.",
+          "max_active": "Classique : 1 à 50 places simultanées. Pondéré : 1 à 100000 unités communes (pas des watts)."
+        }
+      },
+      "scheduling": {
+        "title": "Ordonnancement et attribution",
+        "data": {
+          "strategy": "Stratégie d'ordonnancement",
+          "allocation_mode": "Mode d'attribution",
+          "edit_strategy_options": "Modifier les paramètres de priorité"
+        },
+        "data_description": {
+          "strategy": "FIFO, LIFO ou FIFO prioritaire. La file doit être vide pour changer de stratégie ou de paramètres.",
+          "allocation_mode": "Strict (par défaut) : arrêt si la première demande en attente ne rentre pas. Backfill : les demandes suivantes pouvant utiliser les unités restantes sont accordées sans réordonner les demandes bloquées. Une grosse demande, même prioritaire, peut rester longtemps en attente.",
+          "edit_strategy_options": "Activer uniquement pour modifier le sens des priorités. Le mode Strict/Backfill peut être changé sans ressaisir ces paramètres."
+        }
+      },
+      "recurrence": {
+        "title": "Demandes répétées",
+        "data": {
+          "recurrence_mode": "Gestion des demandes répétées"
+        },
+        "data_description": {
+          "recurrence_mode": "Ignorer (défaut) : comportement identique à la v1.0. Compter : incrémente les occurrences d'un resource_id déjà en attente, sans doubler l'entrée ni changer son ordre, poids ou priorité."
+        }
+      },
+      "resource_weights": {
+        "title": "Poids des ressources"
+      },
+      "capacity_weights": {
+        "title": "Poids adaptés à la capacité"
+      },
+      "scheduling_details": {
+        "title": "Paramètres de priorité",
+        "data": {
+          "priority_order": "Ordre des priorités"
+        },
+        "data_description": {
+          "priority_order": "Plus forte d'abord : 10 avant 1. Plus faible d'abord : 1 avant 10. À priorité égale, ordre d'arrivée conservé."
+        }
       }
     },
     "error": {
