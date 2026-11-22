@@ -2,6 +2,19 @@
 
 **UNRELEASED.** Do not merge or publish before reviewing these gates. This file intentionally does not mark manual validation complete.
 
+## Préversion v1.1.0-rc.2 — Backfill et configuration organisée
+
+La branche `release/v1.1.0-rc.2` regroupe les PR #28 (Backfill) et #30 (interface en quatre catégories) au-dessus de la pré-release précédente. La publication doit créer un **nouveau tag**, sans déplacer `v1.1.0-rc.1`, fusionner dans `main` ni marquer la candidate comme stable.
+
+- [ ] Vérifier les tests Python 3.13 et 3.14, Home Assistant 2026.11, HACS et hassfest **sur le commit final autorisant la RC2**.
+- [ ] Publier uniquement `v1.1.0-rc.2` comme **GitHub pre-release**, jamais « latest stable », après ces vérifications.
+- [ ] Vérifier que les quatre rubriques apparaissent en français et en anglais et qu'une seule rubrique peut être modifiée sans ressaisir les autres.
+- [ ] Vérifier que l'ouverture des menus ne met pas en pause une file active, mais que tout changement accepté conserve la reprise explicite après rechargement.
+- [ ] Tester Strict et Backfill sur une file pondérée avec une demande bloquée devant deux petites demandes.
+- [ ] Vérifier sur HA réel la migration de la RC1 vers RC2, la reprise après redémarrage et un retour arrière sur sauvegarde cohérente.
+
+**Aucune de ces validations manuelles n'est réputée acquise grâce aux seuls tests CI.**
+
 ## Préversion v1.1.0-rc.1 — branche de validation
 
 La branche `release/v1.1.0-rc.1` rassemble les commits empilés des PR #19 à #25 sans fusionner ces PR dans `main`. Son manifeste utilise `1.1.0-rc.1`; la branche stable et le tag `v1.0.0` ne changent pas.
