@@ -10,7 +10,8 @@
           "strategy": "Scheduling strategy",
           "monitored_entities": "Supervised entities",
           "capacity_mode": "Capacity mode",
-          "recurrence_mode": "Repeated request handling"
+          "recurrence_mode": "Repeated request handling",
+          "allocation_mode": "Allocation mode"
         },
         "data_description": {
           "name": "A name to distinguish this queue from other queues (for example Heating).",
@@ -18,7 +19,8 @@
           "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
           "monitored_entities": "Optional during setup. Devices must belong to only one resource queue.",
           "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO.",
-          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority."
+          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority.",
+          "allocation_mode": "Strict (default): stop when the first waiting request does not fit. Backfill: skip blocked requests and grant later ones that fit, preserving their relative order. A large or high-priority request may starve."
         }
       },
       "strategy": {
@@ -44,7 +46,8 @@
       "invalid_strategy_options": "The selected strategy settings are invalid.",
       "invalid_capacity": "The selected capacity is outside the allowed range for this mode.",
       "invalid_weights": "Each supervised entity needs a valid integer weight no greater than total capacity.",
-      "invalid_recurrence_mode": "Unknown recurrence mode."
+      "invalid_recurrence_mode": "Unknown recurrence mode.",
+      "invalid_allocation_mode": "Unknown allocation mode."
     }
   },
   "services": {
@@ -123,14 +126,16 @@
           "max_active": "Capacity limit",
           "strategy": "Scheduling strategy",
           "capacity_mode": "Capacity mode",
-          "recurrence_mode": "Repeated request handling"
+          "recurrence_mode": "Repeated request handling",
+          "allocation_mode": "Allocation mode"
         },
         "data_description": {
           "max_active": "Classic: 1–50 simultaneous slots. Weighted: 1–100000 shared units (not watts).",
           "monitored_entities": "Select any Home Assistant entity, including input_boolean, input_number, input_text, number and text. Generic entity values do not prove physical shutdown.",
           "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
           "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO.",
-          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority."
+          "recurrence_mode": "Ignore (default): keep v1.0 idempotence. Count: increase occurrences only for a repeated pending resource_id; never duplicate an entry or change its order, weight or priority.",
+          "allocation_mode": "Strict (default): stop when the first waiting request does not fit. Backfill: skip blocked requests and grant later ones that fit, preserving their relative order. A large or high-priority request may starve."
         }
       },
       "strategy": {
@@ -161,7 +166,9 @@
       "invalid_weights": "Every supervised entity needs a valid integer weight within the queue capacity.",
       "capacity_mode_in_use": "A queue must have no active or waiting reservations before changing its capacity mode.",
       "invalid_recurrence_mode": "Unknown recurrence mode.",
-      "recurrence_mode_in_use": "Clear all active and waiting requests before changing recurrence mode."
+      "recurrence_mode_in_use": "Clear all active and waiting requests before changing recurrence mode.",
+      "invalid_allocation_mode": "Unknown allocation mode.",
+      "allocation_mode_in_use": "Clear all active reservations and waiting requests before changing allocation mode."
     }
   }
 }
