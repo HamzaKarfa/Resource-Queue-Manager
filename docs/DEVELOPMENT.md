@@ -133,7 +133,7 @@ REQUEST_FIELDS = (
 
 ## Release readiness
 
-Version tags and GitHub releases are deliberately **not** published from pull requests. Only after manual acceptance and merge to `main` should the maintainer run the guarded manual release workflow.
+Version tags and GitHub releases are **never published from pull requests**. Stable v1.1.0 is published automatically **only** after the explicitly authorized, two-parent merge of PR #32 into `main` and after the dedicated guarded workflow passes its full tests. Other pushes to `main` are inert. Check the release workflow logs and the v1.1 stable tag before announcing availability; review and rehearse backup/rollback manually as a separate responsibility.
 
 ```bash
 python -m unittest discover -s tests -v
