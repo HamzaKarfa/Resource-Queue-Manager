@@ -44,18 +44,40 @@ async def action(hass: HomeAssistant, name: str, **fields) -> None:
     await hass.async_block_till_done()
 
 
+async def options_form(hass: HomeAssistant, entry: MockConfigEntry, category: str):
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"].value == "menu"
+    return await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": category}
+    )
+
+
+async def guided_setup(hass: HomeAssistant, flow: dict, *, name: str,
+                       capacity: int, mode: str, strategy: str,
+                       entities: list[str]):
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": name, "monitored_entities": entities}
+    )
+    assert step["step_id"] == "setup_capacity"
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"max_active": capacity, "capacity_mode": mode}
+    )
+    assert step["step_id"] == "setup_scheduling"
+    return await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"strategy": strategy, "allocation_mode": "strict"}
+    )
+
+
 async def test_weighted_setup_flow_collects_per_entity_defaults(hass: HomeAssistant):
     assert await async_setup_component(hass, DOMAIN, {})
     flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    result = await guided_setup(
+        hass, flow, name="New weighted queue", capacity=100,
+        mode="weighted", strategy="fifo", entities=ENTITIES[:2],
+    )
+    assert result["step_id"] == "setup_recurrence"
     result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "New weighted queue",
-            "max_active": 100,
-            "capacity_mode": "weighted",
-            "strategy": "fifo",
-            "monitored_entities": ENTITIES[:2],
-        },
+        flow["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert result["type"].value == "form"
     assert result["step_id"] == "weights"
@@ -74,19 +96,17 @@ async def test_weighted_setup_flow_collects_per_entity_defaults(hass: HomeAssist
 async def test_weighted_priority_setup_composes_strategy_and_weights(hass: HomeAssistant):
     assert await async_setup_component(hass, DOMAIN, {})
     flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
-    step = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "Weighted priority queue",
-            "max_active": 100,
-            "capacity_mode": "weighted",
-            "strategy": "priority_fifo",
-            "monitored_entities": ENTITIES[:1],
-        },
+    step = await guided_setup(
+        hass, flow, name="Weighted priority queue", capacity=100,
+        mode="weighted", strategy="priority_fifo", entities=ENTITIES[:1],
     )
-    assert step["step_id"] == "strategy"
+    assert step["step_id"] == "setup_strategy"
     step = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"priority_order": "lowest_first"}
+    )
+    assert step["step_id"] == "setup_recurrence"
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert step["step_id"] == "weights"
     created = await hass.config_entries.flow.async_configure(
@@ -142,17 +162,11 @@ async def test_weighted_request_service_defaults_overrides_and_restoration(hass:
 
 async def test_options_switch_to_weighted_and_block_switch_with_bookings(hass: HomeAssistant):
     entry = await setup_queue(hass, mode="classic", capacity=3)
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await options_form(hass, entry, "capacity")
     step = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            "max_active": 100,
-            "capacity_mode": "weighted",
-            "strategy": "fifo",
-            "monitored_entities": ENTITIES,
-        },
+        flow["flow_id"], {"max_active": 100, "capacity_mode": "weighted"}
     )
-    assert step["step_id"] == "weights"
+    assert step["step_id"] == "capacity_weights"
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {ENTITIES[0]: 30, ENTITIES[1]: 40, ENTITIES[2]: 1}
     )
@@ -164,15 +178,9 @@ async def test_options_switch_to_weighted_and_block_switch_with_bookings(hass: H
 
     await action(hass, "resume")
     await action(hass, "request", resource_id="h1", entity_id=ENTITIES[0])
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await options_form(hass, entry, "capacity")
     rejected = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            "max_active": 3,
-            "capacity_mode": "classic",
-            "strategy": "fifo",
-            "monitored_entities": ENTITIES,
-        },
+        flow["flow_id"], {"max_active": 3, "capacity_mode": "classic"}
     )
     assert rejected["type"].value == "form"
     assert rejected["errors"]["base"] == "capacity_mode_in_use"
@@ -185,17 +193,11 @@ async def test_change_entity_default_does_not_reweight_active_booking(hass: Home
     await action(hass, "resume")
     await action(hass, "request", resource_id="h1", entity_id=ENTITIES[0])
 
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await options_form(hass, entry, "resources")
     weights_step = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            "max_active": 100,
-            "capacity_mode": "weighted",
-            "strategy": "fifo",
-            "monitored_entities": ENTITIES,
-        },
+        flow["flow_id"], {"monitored_entities": ENTITIES}
     )
-    assert weights_step["step_id"] == "weights"
+    assert weights_step["step_id"] == "resource_weights"
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {ENTITIES[0]: 45, ENTITIES[1]: 40, ENTITIES[2]: 1}
     )
@@ -227,15 +229,13 @@ async def test_options_reject_limit_that_cannot_fit_frozen_pending_weight(hass: 
     assert available is not None
     assert available.state == "30"
 
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
+    flow = await options_form(hass, entry, "capacity")
+    next_step = await hass.config_entries.options.async_configure(
+        flow["flow_id"], {"max_active": 30, "capacity_mode": "weighted"}
+    )
+    assert next_step["step_id"] == "capacity_weights"
     rejected = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            "max_active": 30,
-            "capacity_mode": "weighted",
-            "strategy": "fifo",
-            "monitored_entities": ENTITIES,
-        },
+        flow["flow_id"], {ENTITIES[0]: 20, ENTITIES[1]: 30, ENTITIES[2]: 1}
     )
     assert rejected["type"].value == "form"
     assert rejected["errors"]["base"] == "max_active_below_reserved"
@@ -267,15 +267,12 @@ async def test_weight_selector_normalizes_integral_float_but_not_fraction():
 async def test_classic_setup_enforces_original_fifty_slot_limit(hass: HomeAssistant):
     assert await async_setup_component(hass, DOMAIN, {})
     flow = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": "Oversized classic", "monitored_entities": []}
+    )
+    assert step["step_id"] == "setup_capacity"
     rejected = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "Oversized classic",
-            "max_active": 51,
-            "capacity_mode": "classic",
-            "strategy": "fifo",
-            "monitored_entities": [],
-        },
+        flow["flow_id"], {"max_active": 51, "capacity_mode": "classic"}
     )
     assert rejected["type"].value == "form"
     assert rejected["errors"]["base"] == "invalid_capacity"
