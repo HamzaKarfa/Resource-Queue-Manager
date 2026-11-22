@@ -36,4 +36,4 @@ Priority FIFO's preference is not a strict guarantee of next service when Backfi
 
 Read the [developer guide](../../../docs/DEVELOPMENT.md), [Backfill design](../../../docs/V1.2_BACKFILL.md) and [main README](../../../README.md) before introducing another provider.
 
-**Release status:** these APIs are prepared for v1.1.0 stable and included in the [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). They are not present in the stable v1.0.0 feature set.
+**Availability:** these APIs are part of **Resource Queue Manager v1.1.0**, first validated in the [v1.1.0-rc.2 prerelease](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). They were not available in v1.0.0.
