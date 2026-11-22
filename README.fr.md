@@ -10,6 +10,16 @@
 
 > **Sécurité :** l'intégration ne commande jamais directement les relais. Tes automatisations décident d'allumer et d'éteindre les appareils après réservation. Ce logiciel n'est ni un délesteur électrique certifié, ni un système de protection thermique ; les sécurités matérielles restent indispensables.
 
+## Évolution v1.2 — attribution Backfill (non publiée)
+
+Un nouveau paramètre **Mode d'attribution** permet de choisir **Strict** (comportement actuel, par défaut) ou **Backfill**. En Backfill, si la première demande ne rentre pas dans les unités restantes, le moteur peut attribuer des demandes suivantes plus petites en conservant l'ordre relatif des demandes bloquées.
+
+Exemple : capacité **15**, une ressource active utilise **10** ; une demande de **10** attend, mais une demande suivante de **3**, puis une de **2** peuvent être attribuées. Avec le mode strict, les trois attendent.
+
+Ce mode reste indépendant de FIFO/LIFO/FIFO prioritaire. Une demande moins prioritaire peut passer si la demande plus prioritaire ne rentre pas, avec **un risque de famine** pour les grosses demandes en cas d'arrivées répétées. Il n'y a ni préemption ni augmentation de capacité. Le changement de mode nécessite de vider la file. Les anciennes configurations restent en `strict`.
+
+**Cette fonctionnalité est encore sur une branche de développement et n'est pas dans `v1.1.0-rc.1`.** Voir [la documentation Backfill](docs/V1.2_BACKFILL.md).
+
 ## Aperçu de la v1.1 — candidate RC, non stable
 
 > La branche `release/v1.1.0-rc.1` réunit les fonctionnalités de la v1.1 pour les essais. Le manifeste porte la version `1.1.0-rc.1`, distincte de la version stable `1.0.0`. Lire les [notes de préversion](docs/releases/v1.1.0-rc.1.md) et [la procédure de migration](docs/MIGRATION_v1.0_to_v1.1.md) avant toute installation.
