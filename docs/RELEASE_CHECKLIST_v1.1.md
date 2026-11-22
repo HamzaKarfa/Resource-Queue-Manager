@@ -2,6 +2,15 @@
 
 **UNRELEASED.** Do not merge or publish before reviewing these gates. This file intentionally does not mark manual validation complete.
 
+## Préversion v1.1.0-rc.1 — branche de validation
+
+La branche `release/v1.1.0-rc.1` rassemble les commits empilés des PR #19 à #25 sans fusionner ces PR dans `main`. Son manifeste utilise `1.1.0-rc.1`; la branche stable et le tag `v1.0.0` ne changent pas.
+
+- [ ] Tester **le SHA final de la branche RC** (Python 3.13/3.14, tests HA 2026.11, HACS/hassfest) et vérifier les notes `docs/releases/v1.1.0-rc.1.md`.
+- [ ] Publier uniquement un tag `v1.1.0-rc.1` marqué **GitHub prerelease**, jamais « latest stable », et rattaché exactement au commit testé.
+- [ ] Tester l'installation et le retour arrière sur une instance HA séparée, sans faire passer les essais CI pour des tests matériels.
+- [ ] Poursuivre les revues et les fusions sur `main` indépendamment de la RC, après vérification des prérequis.
+
 ## Ordered PR dependency chain
 
 - [ ] #19 classic provider foundations → `main`
