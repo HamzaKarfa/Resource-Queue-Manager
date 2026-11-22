@@ -1,0 +1,151 @@
+name: Publish v1.1.0 (explicitly authorized PR #32 merge)
+
+# One-time stable release gate: only an authorized, two-parent PR #32
+# merge commit on main can run tests and publish. Other pushes remain inert.
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: resource-queue-manager-publish-v1.1.0
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: >-
+      startsWith(github.event.head_commit.message, 'release: authorize v1.1.0 stable (PR #32)')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 3
+      - name: Authorize exact two-parent PR merge and validate stable metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "::error::Stable publication must originate from main"; exit 1;
+          }
+          test "$(git log -1 --format=%s)" = "release: authorize v1.1.0 stable (PR #32)" || {
+            echo "::error::Unauthorized merge commit subject"; exit 1;
+          }
+          test "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 3 || {
+            echo "::error::Expected a two-parent PR merge commit, not a direct push or squash"; exit 1;
+          }
+          MERGED_SHA="$(gh pr view 32 --repo "$GITHUB_REPOSITORY" --json mergeCommit --jq '.mergeCommit.oid')"
+          test "$MERGED_SHA" = "$GITHUB_SHA" || {
+            echo "::error::Main HEAD is not the reviewed PR #32 merge commit"; exit 1;
+          }
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("custom_components/resource_queue_manager/manifest.json").read_text(encoding="utf-8"))
+          hacs = json.loads(Path("hacs.json").read_text(encoding="utf-8"))
+          assert manifest["version"] == "1.1.0", "Manifest is not v1.1.0 stable"
+          assert manifest["name"] == hacs["name"] == "Resource Queue Manager"
+          assert manifest["integration_type"] == "service"
+          assert manifest["config_flow"] is True
+          notes = Path("docs/releases/v1.1.0.md")
+          assert notes.is_file(), "Missing public stable release notes"
+          text = notes.read_text(encoding="utf-8")
+          assert text.startswith("# Resource Queue Manager — v1.1.0"), "Wrong stable notes title"
+          assert not any(x in text for x in ("- [ ]", "STATUS: PREPARED", "NOT PUBLISHED", "draft release")), "Draft text in published notes"
+          for path in (
+              "docs/MIGRATION_v1.0_to_v1.1.md",
+              "docs/CONFIGURATION_UI_v1.1-rc2.md",
+              "docs/V1.2_BACKFILL.md",
+              "README.fr.md",
+              "docs/RELEASE_CHECKLIST_v1.1.md",
+          ):
+              assert Path(path).is_file(), f"Missing required documentation: {path}"
+          PY
+          if gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Stable v1.1.0 release already exists"; exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.1.0" >/dev/null 2>&1; then
+            echo "::error::Stable v1.1.0 tag already exists"; exit 1
+          fi
+
+  core:
+    needs: preflight
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Core, strategy and stable-release metadata regression
+        run: python -m unittest discover -s tests -v
+
+  home-assistant:
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install Home Assistant 2026.11 test fixtures
+        run: python -m pip install "pytest-homeassistant==2026.11.1"
+      - name: Run Home Assistant integration regression
+        run: python -m pytest -q tests/ha
+
+  hacs:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+
+  hassfest:
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Home Assistant manifest validation
+        uses: home-assistant/actions/hassfest@master
+
+  publish:
+    needs: [core, home-assistant, hacs, hassfest]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create immutable stable v1.1.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git log -1 --format=%s)" = "release: authorize v1.1.0 stable (PR #32)" || exit 1
+          if gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Stable release already exists"; exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v1.1.0" >/dev/null 2>&1; then
+            echo "::error::Stable tag already exists"; exit 1
+          fi
+          gh release create v1.1.0 \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Resource Queue Manager v1.1.0" \
+            --notes-file docs/releases/v1.1.0.md \
+            --latest
+          test "$(gh release view v1.1.0 --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq '.isPrerelease')" = "false" || {
+            echo "::error::Release was not marked stable"; exit 1;
+          }
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = "v1.1.0" || {
+            echo "::error::Release was not marked latest"; exit 1;
+          }

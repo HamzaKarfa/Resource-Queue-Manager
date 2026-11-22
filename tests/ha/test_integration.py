@@ -44,6 +44,38 @@ async def action(hass: HomeAssistant, operation: str, **data: str) -> None:
     await hass.async_block_till_done()
 
 
+async def options_form(hass: HomeAssistant, entry: MockConfigEntry, category: str):
+    """Navigate the actual four-category HA Configure menu."""
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"].value == "menu"
+    form = await hass.config_entries.options.async_configure(
+        menu["flow_id"], {"next_step_id": category}
+    )
+    assert form["type"].value == "form"
+    return form
+
+
+async def guided_setup_to_policy(
+    hass: HomeAssistant, flow: dict, *,
+    name: str, capacity: int, strategy: str,
+    monitored: list[str] | None = None, capacity_mode: str = "classic",
+    allocation_mode: str = "strict",
+):
+    """Drive guided setup to its strategy-specific or recurrence step."""
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": name, "monitored_entities": monitored or []}
+    )
+    assert step["step_id"] == "setup_capacity"
+    step = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"capacity_mode": capacity_mode, "max_active": capacity}
+    )
+    assert step["step_id"] == "setup_scheduling"
+    return await hass.config_entries.flow.async_configure(
+        flow["flow_id"],
+        {"strategy": strategy, "allocation_mode": allocation_mode},
+    )
+
+
 async def request(hass: HomeAssistant, index: int) -> None:
     await action(
         hass,
@@ -167,7 +199,7 @@ async def test_options_form_reconfigures_supervised_relays(
     hass: HomeAssistant, queue_entry: MockConfigEntry
 ) -> None:
     """The Configure UI persists selection and reloads the entry paused."""
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "resources")
     assert form["type"] is not None
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"monitored_entities": ["light.relay_1"]}
@@ -198,7 +230,7 @@ async def test_options_form_rejects_removal_of_active_reservation(
     await action(hass, "resume")
     await request(hass, 3)
 
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "resources")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"monitored_entities": ["light.relay_1"]}
     )
@@ -217,7 +249,7 @@ async def test_options_form_rejects_removal_of_waiting_request(
         await request(hass, i)
     assert sensor(hass, "waiting").state == "1"
 
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "resources")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"monitored_entities": [
             "light.relay_1", "light.relay_2", "light.relay_3"
@@ -235,7 +267,7 @@ async def test_legacy_stored_history_ignored_after_explicit_selection(
     snapshot["known_relays"] = {"old_ch3": "light.relay_3"}
     await runtime.store.async_save(snapshot)
 
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "resources")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"monitored_entities": ["light.relay_1"]}
     )
@@ -251,13 +283,10 @@ async def test_edit_max_slots_from_options_and_persist(
     hass: HomeAssistant, queue_entry: MockConfigEntry
 ) -> None:
     """Changing 3 to 2 preserves the configuration across reloads."""
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 2,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 2, "capacity_mode": "classic"},
     )
     assert result["type"].value == "create_entry"
     await hass.async_block_till_done()
@@ -273,7 +302,7 @@ async def test_edit_max_slots_from_options_and_persist(
     assert sensor(hass, "waiting").attributes["waiting"] == ["h3"]
 
     # Opening Configure again must preserve the edited max as its default.
-    reopened = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    reopened = await options_form(hass, queue_entry, "capacity")
     assert reopened["type"].value == "form"
 
 
@@ -284,13 +313,10 @@ async def test_options_reject_limit_below_existing_active_reservations(
     for i in range(1, 4):
         await request(hass, i)
 
-    flow = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    flow = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 2,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 2, "capacity_mode": "classic"},
     )
     assert result["type"].value == "form"
     assert result["errors"]["base"] == "max_active_below_reserved"
@@ -307,13 +333,10 @@ async def test_increase_max_with_waiters_promotes_only_on_resume(
     assert sensor(hass, "waiting").attributes["waiting"] == ["h4", "h5"]
     assert sensor(hass, "active").attributes["active"] == ["h1", "h2", "h3"]
 
-    flow = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    flow = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 4,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 4, "capacity_mode": "classic"},
     )
     assert result["type"].value == "create_entry"
     await hass.async_block_till_done()
@@ -343,10 +366,10 @@ async def test_capacity_forms_use_number_box_not_slider(
         assert isinstance(selector, NumberSelector)
         assert selector.config["mode"] == "box"
         assert selector.config["min"] == 1
-        assert selector.config["max"] == 50
+        assert selector.config["max"] == 100000
         assert selector.config["step"] == 1
 
-    options = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    options = await options_form(hass, queue_entry, "capacity")
     assert options["type"].value == "form"
     assert_number_box(options["data_schema"])
 
@@ -360,14 +383,18 @@ async def test_initial_setup_uses_number_box(hass: HomeAssistant) -> None:
         DOMAIN, context={"source": "user"}
     )
     assert setup["type"].value == "form"
+    capacity_form = await hass.config_entries.flow.async_configure(
+        setup["flow_id"], {"name": "Number box", "monitored_entities": []}
+    )
+    assert capacity_form["step_id"] == "setup_capacity"
     selector = next(
-        field for marker, field in setup["data_schema"].schema.items()
+        field for marker, field in capacity_form["data_schema"].schema.items()
         if marker.schema == "max_active"
     )
     assert isinstance(selector, NumberSelector)
     assert selector.config["mode"] == "box"
     assert selector.config["min"] == 1
-    assert selector.config["max"] == 50
+    assert selector.config["max"] == 100000
 
 
 async def test_multi_instance_routes_and_isolates_fifo_lifo_queues(
@@ -437,14 +464,10 @@ async def test_options_reject_strategy_change_with_pending_work(
 ) -> None:
     await action(hass, "resume")
     await request(hass, 1)
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "scheduling")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "lifo",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "lifo", "allocation_mode": "strict"},
     )
     assert result["type"].value == "form"
     assert result["errors"]["base"] == "strategy_in_use"
@@ -460,7 +483,13 @@ async def test_second_config_flow_asks_for_name_and_strategy(
     )
     assert flow["type"].value == "form"
     fields = {marker.schema for marker in flow["data_schema"].schema}
-    assert {"name", "max_active", "strategy", "monitored_entities"} <= fields
+    assert fields == {"name", "monitored_entities"}
+    capacity = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"name": "Another queue", "monitored_entities": []}
+    )
+    assert {marker.schema for marker in capacity["data_schema"].schema} == {
+        "max_active", "capacity_mode"
+    }
 
 
 @pytest.fixture
@@ -504,22 +533,20 @@ async def test_config_flow_renders_provider_options_and_persists_them(
         DOMAIN, context={"source": "user"}
     )
     assert first["type"].value == "form"
-    next_step = await hass.config_entries.flow.async_configure(
-        first["flow_id"],
-        {
-            "name": "Configurable Queue",
-            "max_active": 1,
-            "strategy": "sample_policy",
-            "monitored_entities": [],
-        },
+    next_step = await guided_setup_to_policy(
+        hass, first, name="Configurable Queue", capacity=1, strategy="sample_policy"
     )
     assert next_step["type"].value == "form"
-    assert next_step["step_id"] == "strategy"
+    assert next_step["step_id"] == "setup_strategy"
     fields = {marker.schema for marker in next_step["data_schema"].schema}
     assert fields == {"threshold", "flavor"}
 
-    created = await hass.config_entries.flow.async_configure(
+    recurrence = await hass.config_entries.flow.async_configure(
         first["flow_id"], {"threshold": 5, "flavor": "two"}
+    )
+    assert recurrence["step_id"] == "setup_recurrence"
+    created = await hass.config_entries.flow.async_configure(
+        first["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert created["type"].value == "create_entry"
     assert created["data"]["strategy_config"] == {
@@ -531,17 +558,13 @@ async def test_options_flow_updates_provider_settings_and_recovers(
     hass: HomeAssistant, queue_entry: MockConfigEntry, configured_test_strategy
 ) -> None:
     """Configuration changes run through an extra provider-specific step."""
-    flow = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    flow = await options_form(hass, queue_entry, "scheduling")
     selected = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
     assert selected["type"].value == "form"
-    assert selected["step_id"] == "strategy"
+    assert selected["step_id"] == "scheduling_details"
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {"threshold": 3, "flavor": "one"}
     )
@@ -560,16 +583,12 @@ async def test_strategy_specific_options_cannot_change_with_active_booking(
     hass: HomeAssistant, queue_entry: MockConfigEntry, configured_test_strategy
 ) -> None:
     """A queue must not lose active work when a plugin setting changes."""
-    initial = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    initial = await options_form(hass, queue_entry, "scheduling")
     strategy_step = await hass.config_entries.options.async_configure(
         initial["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
-    assert strategy_step["step_id"] == "strategy"
+    assert strategy_step["step_id"] == "scheduling_details"
     saved = await hass.config_entries.options.async_configure(
         initial["flow_id"], {"threshold": 3, "flavor": "one"}
     )
@@ -579,16 +598,12 @@ async def test_strategy_specific_options_cannot_change_with_active_booking(
     await action(hass, "resume")
     await request(hass, 1)
 
-    form = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    form = await options_form(hass, queue_entry, "scheduling")
     options = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
-    assert options["step_id"] == "strategy"
+    assert options["step_id"] == "scheduling_details"
     rejected = await hass.config_entries.options.async_configure(
         form["flow_id"], {"threshold": 4, "flavor": "one"}
     )
@@ -689,22 +704,20 @@ async def test_priority_fifo_config_flow_uses_provider_fields(
         DOMAIN, context={"source": "user"}
     )
     assert flow["type"].value == "form"
-    step = await hass.config_entries.flow.async_configure(
-        flow["flow_id"],
-        {
-            "name": "Priority Test",
-            "max_active": 1,
-            "strategy": "priority_fifo",
-            "monitored_entities": [],
-        },
+    step = await guided_setup_to_policy(
+        hass, flow, name="Priority Test", capacity=1, strategy="priority_fifo"
     )
     assert step["type"].value == "form"
-    assert step["step_id"] == "strategy"
+    assert step["step_id"] == "setup_strategy"
     fields = {marker.schema for marker in step["data_schema"].schema}
     assert fields == {"priority_order"}
 
-    created = await hass.config_entries.flow.async_configure(
+    recurrence = await hass.config_entries.flow.async_configure(
         flow["flow_id"], {"priority_order": "lowest_first"}
+    )
+    assert recurrence["step_id"] == "setup_recurrence"
+    created = await hass.config_entries.flow.async_configure(
+        flow["flow_id"], {"recurrence_mode": "ignore"}
     )
     assert created["type"].value == "create_entry"
     assert created["data"]["strategy"] == "priority_fifo"
@@ -717,17 +730,18 @@ async def test_priority_fifo_ha_actions_keep_ties_and_survive_reload(
     hass: HomeAssistant, queue_entry: MockConfigEntry
 ) -> None:
     """Real service calls preserve priorities, FIFO ties and fail-closed restart."""
-    options = await hass.config_entries.options.async_init(queue_entry.entry_id)
+    capacity = await options_form(hass, queue_entry, "capacity")
+    updated = await hass.config_entries.options.async_configure(
+        capacity["flow_id"], {"max_active": 1, "capacity_mode": "classic"}
+    )
+    assert updated["type"].value == "create_entry"
+    await hass.async_block_till_done()
+    options = await options_form(hass, queue_entry, "scheduling")
     strategy_form = await hass.config_entries.options.async_configure(
-        options["flow_id"],
-        {
-            "max_active": 1,
-            "strategy": "priority_fifo",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        options["flow_id"], {"strategy": "priority_fifo", "allocation_mode": "strict"}
     )
     assert strategy_form["type"].value == "form"
-    assert strategy_form["step_id"] == "strategy"
+    assert strategy_form["step_id"] == "scheduling_details"
     chosen = await hass.config_entries.options.async_configure(
         options["flow_id"], {"priority_order": "highest_first"}
     )

@@ -26,7 +26,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         manifest = json.loads((INTEGRATION / "manifest.json").read_text("utf-8"))
         hacs = json.loads((ROOT / "hacs.json").read_text("utf-8"))
         version = manifest["version"]
-        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
+        self.assertRegex(version, r"^\d+\.\d+\.\d+(?:-rc\.\d+)?$")
         self.assertEqual(hacs["name"], manifest["name"])
         self.assertTrue(manifest["config_flow"])
         self.assertTrue((ROOT / "docs" / "releases" / f"v{version}.md").is_file())

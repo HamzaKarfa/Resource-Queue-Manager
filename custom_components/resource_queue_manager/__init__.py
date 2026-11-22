@@ -18,6 +18,11 @@ from .const import (
     ATTR_CONFIG_ENTRY_ID,
     ATTR_ENTITY_ID,
     ATTR_STRATEGY_DATA,
+    ATTR_ENGINE_DATA,
+    CONF_CAPACITY_MODE,
+    CONF_ENTITY_WEIGHTS,
+    CONF_RECURRENCE_MODE,
+    CONF_ALLOCATION_MODE,
     CONF_MAX_ACTIVE,
     CONF_STRATEGY,
     CONF_STRATEGY_CONFIG,
@@ -34,6 +39,9 @@ from .const import (
 from .coordinator import ResourceQueueCoordinator, QueueStateError
 from .engine import QueueResult
 from .strategies import DEFAULT_STRATEGY
+from .capacity import DEFAULT_CAPACITY_MODE
+from .recurrence import DEFAULT_RECURRENCE_MODE
+from .allocation import DEFAULT_ALLOCATION_MODE
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -46,6 +54,7 @@ REQUEST_SCHEMA = vol.Schema(
         vol.Required(ATTR_ENTITY_ID): cv.entity_id,
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
         vol.Optional(ATTR_STRATEGY_DATA): dict,
+        vol.Optional(ATTR_ENGINE_DATA): dict,
     }
 )
 RESOURCE_SCHEMA = vol.Schema(
@@ -102,6 +111,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     ATTR_RESOURCE_ID: resource_id,
                     ATTR_ENTITY_ID: runtime.manager.entity_for(resource_id),
                     "config_entry_id": entry_id,
+                    "occurrences": runtime.manager.queue.occurrences(resource_id),
+                    "effective_weight": runtime.manager.queue.effective_weight(resource_id),
+                    "capacity_mode": runtime.manager.capacity_mode,
+                    "allocation_mode": runtime.manager.allocation_mode,
                 },
             )
 
@@ -124,6 +137,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                         call.data[ATTR_RESOURCE_ID],
                         call.data[ATTR_ENTITY_ID],
                         call.data.get(ATTR_STRATEGY_DATA),
+                        engine_data=call.data.get(ATTR_ENGINE_DATA),
                     )
                 elif operation == SERVICE_RELEASE:
                     result = runtime.manager.release(call.data[ATTR_RESOURCE_ID])
@@ -209,6 +223,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     strategy_config = entry.options.get(
         CONF_STRATEGY_CONFIG, entry.data.get(CONF_STRATEGY_CONFIG, {})
     )
+    capacity_mode = entry.options.get(
+        CONF_CAPACITY_MODE, entry.data.get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE)
+    )
+    entity_weights = entry.options.get(
+        CONF_ENTITY_WEIGHTS, entry.data.get(CONF_ENTITY_WEIGHTS)
+    )
+    recurrence_mode = entry.options.get(
+        CONF_RECURRENCE_MODE,
+        entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
+    )
+    allocation_mode = entry.options.get(
+        CONF_ALLOCATION_MODE,
+        entry.data.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
+    )
     store = Store(
         hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
     )
@@ -224,6 +252,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 monitored_entities=supervised,
                 strategy=strategy,
                 strategy_config=strategy_config,
+                capacity_mode=capacity_mode,
+                entity_weights=entity_weights,
+                recurrence_mode=recurrence_mode,
+                allocation_mode=allocation_mode,
             )
         else:
             manager = ResourceQueueCoordinator.from_state(
@@ -236,6 +268,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 monitored_entities=supervised,
                 strategy=strategy,
                 strategy_config=strategy_config,
+                capacity_mode=capacity_mode,
+                entity_weights=entity_weights,
+                recurrence_mode=recurrence_mode,
+                allocation_mode=allocation_mode,
                 legacy_max_active=entry.data.get(
                     CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE
                 ),

@@ -60,9 +60,12 @@ class ResourceQueueSensor(SensorEntity):
             return len(snapshot.waiting)
         if self._metric == "status":
             return "paused" if self._manager.paused else "ready"
-        # Available means *grantable* slots, not just free reservations.
+        # Classic reports free slots; weighted reports remaining integer units.
+        # A positive weighted remainder does not override strict head-of-line.
         if self._manager.paused:
             return 0
+        if self._manager.capacity_mode == "weighted":
+            return self._manager.capacity_remaining
         return self._manager.max_active - len(snapshot.active)
 
     @property
@@ -73,7 +76,19 @@ class ResourceQueueSensor(SensorEntity):
             "active": list(snapshot.active),
             "waiting": list(snapshot.waiting),
             "max_active": self._manager.max_active,
+            "capacity_mode": self._manager.capacity_mode,
+            "capacity_unit": "slots" if self._manager.capacity_mode == "classic" else "units",
+            "capacity_total": self._manager.max_active,
+            "capacity_used": self._manager.capacity_used,
+            "capacity_remaining": self._manager.capacity_remaining,
+            "effective_weights": {
+                resource: self._manager.queue.effective_weight(resource)
+                for resource in (*snapshot.active, *snapshot.waiting)
+            },
             "strategy": self._manager.strategy,
+            "recurrence_mode": self._manager.recurrence_mode,
+            "allocation_mode": self._manager.allocation_mode,
+            "occurrence_counts": self._manager.queue.export_occurrence_counts(),
             "config_entry_id": self._entry_id,
             "paused": self._manager.paused,
             "monitored_entities": list(self._manager.monitored_entities),

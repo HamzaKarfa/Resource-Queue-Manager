@@ -23,6 +23,10 @@ from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_MAX_ACTIVE,
+    CONF_CAPACITY_MODE,
+    CONF_ENTITY_WEIGHTS,
+    CONF_RECURRENCE_MODE,
+    CONF_ALLOCATION_MODE,
     CONF_MONITORED_ENTITIES,
     CONF_NAME,
     CONF_STRATEGY,
@@ -30,6 +34,9 @@ from .const import (
     DEFAULT_MAX_ACTIVE,
     DOMAIN,
 )
+from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE, get_capacity_policy
+from .recurrence import DEFAULT_RECURRENCE_MODE, RECURRENCE_PROVIDERS
+from .allocation import ALLOCATION_MODES, DEFAULT_ALLOCATION_MODE
 from .strategies import (
     DEFAULT_STRATEGY,
     PROVIDERS,
@@ -41,9 +48,153 @@ from .strategy_forms import strategy_form_schema
 
 STORAGE_VERSION = 1
 
+# Support larger unit budgets while retaining the historic classic limit.
 MAX_ACTIVE_SELECTOR = NumberSelector(
-    NumberSelectorConfig(min=1, max=50, step=1, mode=NumberSelectorMode.BOX)
+    NumberSelectorConfig(min=1, max=100000, step=1, mode=NumberSelectorMode.BOX)
 )
+
+
+def capacity_mode_selector(language: str = "en") -> SelectSelector:
+    """Capacity is independent of the selected ordering strategy."""
+    french = language.lower().startswith("fr")
+    translated = {
+        "classic": "Classique (places)",
+        "weighted": "Pondéré (unités)",
+    }
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(
+                    value=key,
+                    label=translated.get(key, provider.label) if french else provider.label,
+                )
+                for key, provider in CAPACITY_PROVIDERS.items()
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def recurrence_mode_selector(language: str = "en") -> SelectSelector:
+    """Declare duplicate handling independently of scheduling and capacity."""
+    french = language.lower().startswith("fr")
+    translated = {
+        "ignore": "Ignorer les répétitions",
+        "count": "Compter les répétitions en attente",
+    }
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(
+                    value=key,
+                    label=translated.get(key, provider.label) if french else provider.label,
+                )
+                for key, provider in RECURRENCE_PROVIDERS.items()
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def allocation_mode_selector(language: str = "en") -> SelectSelector:
+    """Choose admission traversal independently of scheduling and capacity."""
+    french = language.lower().startswith("fr")
+    labels = {
+        "strict": "Strict — ordre prioritaire" if french else "Strict — block at first request that cannot fit",
+        "backfill": "Backfill — utiliser les unités libres" if french else "Backfill — grant fitting requests further in the queue",
+    }
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(value=key, label=labels[key])
+                for key in ("strict", "backfill")
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def _capacity_configuration_valid(mode: str, capacity: int) -> bool:
+    """Classic retains 1-50 slots; weighted supports 1-100000 units."""
+    return (
+        mode in CAPACITY_PROVIDERS
+        and type(capacity) is int
+        and 1 <= capacity <= (50 if mode == "classic" else 100000)
+    )
+
+
+def _weights_schema(
+    entities: list[str], defaults: dict[str, int], capacity: int
+) -> vol.Schema:
+    """Show a native number box for each supervised entity ID."""
+    return vol.Schema({
+        vol.Required(entity, default=defaults.get(entity, 1)): NumberSelector(
+            NumberSelectorConfig(
+                min=1, max=capacity, step=1, mode=NumberSelectorMode.BOX
+            )
+        )
+        for entity in entities
+    })
+
+
+def _normalize_weights(
+    entities: list[str], values: dict[str, Any], capacity: int
+) -> dict[str, int]:
+    if set(values) != set(entities):
+        raise ValueError("Every supervised entity requires a default weight")
+    result: dict[str, int] = {}
+    for entity in entities:
+        value = values[entity]
+        # HA NumberSelector may return 30.0 for a step=1 box. Normalize
+        # integral floats from the UI, but reject fractions and booleans.
+        if (
+            type(value) not in (int, float)
+            or not (1 <= value <= capacity)
+            or int(value) != value
+        ):
+            raise ValueError("Weights must be positive integer units within total capacity")
+        result[entity] = int(value)
+    return result
+
+
+def _saved_capacity_error(
+    saved: dict, new_mode: str, new_limit: int
+) -> str | None:
+    """Check unloaded reservations using their saved, immutable effective weights."""
+    active = saved.get("active", [])
+    waiting = saved.get("waiting", [])
+    mode = saved.get("capacity_mode", DEFAULT_CAPACITY_MODE)
+    if mode not in CAPACITY_PROVIDERS:
+        raise ValueError("Unknown stored capacity mode")
+    if mode != new_mode and (active or waiting):
+        return "capacity_mode_in_use"
+    if mode == "classic":
+        if saved.get("engine_request_data"):
+            raise ValueError("Unexpected classic engine weights")
+        units = {resource: 1 for resource in (*active, *waiting)}
+    else:
+        metadata = saved.get("engine_request_data", {})
+        if not isinstance(metadata, dict) or set(metadata) != set((*active, *waiting)):
+            raise ValueError("Missing frozen weights")
+        units = {}
+        for resource in (*active, *waiting):
+            data = metadata[resource]
+            if not isinstance(data, dict) or set(data) != {"weight"}:
+                raise ValueError("Invalid frozen weight metadata")
+            value = data["weight"]
+            if type(value) is not int or value < 1:
+                raise ValueError("Invalid frozen weight")
+            units[resource] = value
+    try:
+        get_capacity_policy(mode).validate_limit(
+            active_units=tuple(units[r] for r in active),
+            waiting_units=tuple(units[r] for r in waiting),
+            capacity=new_limit,
+        )
+    except ValueError:
+        return "max_active_below_reserved"
+    return None
+
 def strategy_selector(language: str = "en") -> SelectSelector:
     """Refresh provider choices in the user's Home Assistant language."""
     return SelectSelector(
@@ -82,7 +233,28 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict | None = None):
         errors: dict[str, str] = {}
-        if user_input is not None:
+        if user_input is not None and CONF_MAX_ACTIVE not in user_input:
+            # New guided setup: name/resources, then capacity, scheduling,
+            # optional priority settings, recurrence and weighted defaults.
+            name = user_input[CONF_NAME].strip()
+            if not name:
+                errors["base"] = "invalid_name"
+            elif any(e.title == name for e in self.hass.config_entries.async_entries(DOMAIN)):
+                errors["base"] = "name_in_use"
+            elif _overlapping_entities(
+                self.hass, user_input.get(CONF_MONITORED_ENTITIES, [])
+            ):
+                errors["base"] = "entities_in_use_elsewhere"
+            else:
+                self._pending_data = {
+                    CONF_NAME: name,
+                    CONF_MONITORED_ENTITIES: list(
+                        user_input.get(CONF_MONITORED_ENTITIES, [])
+                    ),
+                }
+                return await self.async_step_setup_capacity()
+        elif user_input is not None:
+            # Keep old direct-input API compatible for programmatic/fixture users.
             name = user_input[CONF_NAME].strip()
             if not name:
                 errors["base"] = "invalid_name"
@@ -90,6 +262,14 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "name_in_use"
             elif user_input[CONF_STRATEGY] not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
+            elif user_input[CONF_RECURRENCE_MODE] not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
+            elif user_input.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE) not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
+            elif not _capacity_configuration_valid(
+                user_input[CONF_CAPACITY_MODE], int(user_input[CONF_MAX_ACTIVE])
+            ):
+                errors["base"] = "invalid_capacity"
             elif _overlapping_entities(
                 self.hass, user_input.get(CONF_MONITORED_ENTITIES, [])
             ):
@@ -100,6 +280,9 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_NAME: name,
                     CONF_MAX_ACTIVE: int(user_input[CONF_MAX_ACTIVE]),
                     CONF_STRATEGY: user_input[CONF_STRATEGY],
+                    CONF_CAPACITY_MODE: user_input[CONF_CAPACITY_MODE],
+                    CONF_RECURRENCE_MODE: user_input[CONF_RECURRENCE_MODE],
+                    CONF_ALLOCATION_MODE: user_input.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
                     CONF_MONITORED_ENTITIES: list(
                         user_input.get(CONF_MONITORED_ENTITIES, [])
                     ),
@@ -107,19 +290,11 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if get_provider(user_input[CONF_STRATEGY]).config_fields:
                     return await self.async_step_strategy()
                 self._pending_data[CONF_STRATEGY_CONFIG] = {}
-                return self.async_create_entry(title=name, data=self._pending_data)
+                return await self._finish_setup()
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=(user_input or {}).get(CONF_NAME, "My queue")): str,
-                vol.Required(
-                    CONF_MAX_ACTIVE,
-                    default=(user_input or {}).get(CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE),
-                ): MAX_ACTIVE_SELECTOR,
-                vol.Required(
-                    CONF_STRATEGY,
-                    default=(user_input or {}).get(CONF_STRATEGY, DEFAULT_STRATEGY),
-                ): strategy_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES,
                     default=(user_input or {}).get(CONF_MONITORED_ENTITIES, []),
@@ -127,6 +302,123 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_setup_capacity(self, user_input: dict | None = None):
+        """Guided creation: choose capacity independently of other settings."""
+        errors = {}
+        if user_input is not None:
+            mode = user_input[CONF_CAPACITY_MODE]
+            limit = int(user_input[CONF_MAX_ACTIVE])
+            if not _capacity_configuration_valid(mode, limit):
+                errors["base"] = "invalid_capacity"
+            else:
+                self._pending_data.update({
+                    CONF_CAPACITY_MODE: mode,
+                    CONF_MAX_ACTIVE: limit,
+                })
+                return await self.async_step_setup_scheduling()
+
+        return self.async_show_form(
+            step_id="setup_capacity",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_CAPACITY_MODE,
+                    default=(user_input or {}).get(
+                        CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE
+                    ),
+                ): capacity_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_MAX_ACTIVE,
+                    default=(user_input or {}).get(
+                        CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE
+                    ),
+                ): MAX_ACTIVE_SELECTOR,
+            }),
+            errors=errors,
+        )
+
+    async def async_step_setup_scheduling(self, user_input: dict | None = None):
+        """Guided creation: scheduling and admission in one short screen."""
+        errors = {}
+        if user_input is not None:
+            strategy = user_input[CONF_STRATEGY]
+            allocation = user_input[CONF_ALLOCATION_MODE]
+            if strategy not in PROVIDERS:
+                errors["base"] = "invalid_strategy"
+            elif allocation not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
+            else:
+                self._pending_data.update({
+                    CONF_STRATEGY: strategy,
+                    CONF_ALLOCATION_MODE: allocation,
+                })
+                if get_provider(strategy).config_fields:
+                    return await self.async_step_setup_strategy()
+                self._pending_data[CONF_STRATEGY_CONFIG] = {}
+                return await self.async_step_setup_recurrence()
+
+        return self.async_show_form(
+            step_id="setup_scheduling",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_STRATEGY,
+                    default=(user_input or {}).get(
+                        CONF_STRATEGY, DEFAULT_STRATEGY
+                    ),
+                ): strategy_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_ALLOCATION_MODE,
+                    default=(user_input or {}).get(
+                        CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE
+                    ),
+                ): allocation_mode_selector(self.hass.config.language),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_setup_strategy(self, user_input: dict | None = None):
+        """Show provider settings only if the selected strategy has them."""
+        strategy = self._pending_data[CONF_STRATEGY]
+        errors = {}
+        if user_input is not None:
+            try:
+                config = validate_strategy_config(strategy, user_input)
+            except ValueError:
+                errors["base"] = "invalid_strategy_options"
+            else:
+                self._pending_data[CONF_STRATEGY_CONFIG] = config
+                return await self.async_step_setup_recurrence()
+        return self.async_show_form(
+            step_id="setup_strategy",
+            data_schema=strategy_form_schema(
+                strategy, user_input, self.hass.config.language
+            ),
+            errors=errors,
+        )
+
+    async def async_step_setup_recurrence(self, user_input: dict | None = None):
+        """Last independent policy before any conditional per-entity weights."""
+        errors = {}
+        if user_input is not None:
+            mode = user_input[CONF_RECURRENCE_MODE]
+            if mode not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
+            else:
+                self._pending_data[CONF_RECURRENCE_MODE] = mode
+                return await self._finish_setup()
+
+        return self.async_show_form(
+            step_id="setup_recurrence",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_RECURRENCE_MODE,
+                    default=(user_input or {}).get(
+                        CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE
+                    ),
+                ): recurrence_mode_selector(self.hass.config.language),
+            }),
+            errors=errors,
+        )
 
     async def async_step_strategy(self, user_input: dict | None = None):
         """Configure fields provided by the selected algorithm module."""
@@ -150,8 +442,8 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "entities_in_use_elsewhere"
                 else:
                     data = dict(self._pending_data)
-                    data[CONF_STRATEGY_CONFIG] = normalized
-                    return self.async_create_entry(title=data[CONF_NAME], data=data)
+                    self._pending_data[CONF_STRATEGY_CONFIG] = normalized
+                    return await self._finish_setup()
         return self.async_show_form(
             step_id="strategy",
             data_schema=strategy_form_schema(
@@ -160,10 +452,52 @@ class ResourceQueueManagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def _finish_setup(self):
+        """Complete classic setup, or ask for default weights in weighted mode."""
+        if (
+            self._pending_data[CONF_CAPACITY_MODE] == "weighted"
+            and self._pending_data[CONF_MONITORED_ENTITIES]
+        ):
+            return await self.async_step_weights()
+        self._pending_data[CONF_ENTITY_WEIGHTS] = {}
+        return self.async_create_entry(
+            title=self._pending_data[CONF_NAME], data=self._pending_data
+        )
+
+    async def async_step_weights(self, user_input: dict | None = None):
+        """Collect the supervised entities' default unit costs."""
+        data = self._pending_data
+        entities = data[CONF_MONITORED_ENTITIES]
+        capacity = data[CONF_MAX_ACTIVE]
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                weights = _normalize_weights(entities, user_input, capacity)
+            except ValueError:
+                errors["base"] = "invalid_weights"
+            else:
+                if any(
+                    entry.title == data[CONF_NAME]
+                    for entry in self.hass.config_entries.async_entries(DOMAIN)
+                ):
+                    errors["base"] = "name_in_use"
+                elif _overlapping_entities(self.hass, entities):
+                    errors["base"] = "entities_in_use_elsewhere"
+                else:
+                    data[CONF_ENTITY_WEIGHTS] = weights
+                    return self.async_create_entry(title=data[CONF_NAME], data=data)
+        return self.async_show_form(
+            step_id="weights",
+            data_schema=_weights_schema(entities, user_input or {}, capacity),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> "ResourceQueueOptionsFlow":
-        return ResourceQueueOptionsFlow()
+        from .options_sections import SectionedOptionsFlow
+
+        return SectionedOptionsFlow()
 
 
 class ResourceQueueOptionsFlow(OptionsFlowWithReload):
@@ -187,26 +521,52 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
         current_config = entry.options.get(
             CONF_STRATEGY_CONFIG, entry.data.get(CONF_STRATEGY_CONFIG, {})
         )
+        current_mode = entry.options.get(
+            CONF_CAPACITY_MODE, entry.data.get(CONF_CAPACITY_MODE, DEFAULT_CAPACITY_MODE)
+        )
+        current_recurrence = entry.options.get(
+            CONF_RECURRENCE_MODE,
+            entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
+        )
+        current_allocation = entry.options.get(
+            CONF_ALLOCATION_MODE,
+            entry.data.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
+        )
         new_limit = current_limit
         new_strategy = current_strategy
+        new_mode = current_mode
+        new_recurrence = current_recurrence
+        new_allocation = current_allocation
 
         if user_input is not None:
             selected = list(user_input.get(CONF_MONITORED_ENTITIES, []))
             new_limit = int(user_input[CONF_MAX_ACTIVE])
             new_strategy = user_input[CONF_STRATEGY]
+            new_mode = user_input[CONF_CAPACITY_MODE]
+            new_recurrence = user_input[CONF_RECURRENCE_MODE]
+            new_allocation = user_input.get(CONF_ALLOCATION_MODE, current_allocation)
             if new_strategy not in PROVIDERS:
                 errors["base"] = "invalid_strategy"
+            elif new_mode not in CAPACITY_PROVIDERS:
+                errors["base"] = "invalid_capacity_mode"
+            elif new_recurrence not in RECURRENCE_PROVIDERS:
+                errors["base"] = "invalid_recurrence_mode"
+            elif new_allocation not in ALLOCATION_MODES:
+                errors["base"] = "invalid_allocation_mode"
+            elif not _capacity_configuration_valid(new_mode, new_limit):
+                errors["base"] = "invalid_capacity"
             elif _overlapping_entities(self.hass, selected, entry.entry_id):
                 errors["base"] = "entities_in_use_elsewhere"
 
-            # When a plugin form is required, defer settings validation until
-            # its final submit. No live queue is paused during the extra step.
-            ready = getattr(self, "_strategy_config_ready", False)
+            # Provider forms must finish before pausing a live queue.
+            strategy_ready = getattr(self, "_strategy_config_ready", False)
+            weights_ready = getattr(self, "_weights_ready", False)
             has_fields = not errors and bool(get_provider(new_strategy).config_fields)
-            pending_plugin_form = bool(has_fields and not ready)
+            pending_strategy = bool(has_fields and not strategy_ready)
+            pending_weights = bool(new_mode == "weighted" and selected and not weights_ready)
             candidate_config = (
                 self._validated_strategy_config
-                if ready
+                if strategy_ready
                 else current_config if current_strategy == new_strategy else {}
             )
 
@@ -216,21 +576,32 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                     saved = runtime.manager.export_state()
                     if not set(saved["bindings"].values()).issubset(selected):
                         errors["base"] = "entities_in_use"
-                    elif new_limit < len(saved["active"]):
-                        errors["base"] = "max_active_below_reserved"
-                    elif (
+                    elif new_mode != runtime.manager.capacity_mode and (
+                        saved["active"] or saved["waiting"]
+                    ):
+                        errors["base"] = "capacity_mode_in_use"
+                    elif new_recurrence != runtime.manager.recurrence_mode and (
+                        saved["active"] or saved["waiting"]
+                    ):
+                        errors["base"] = "recurrence_mode_in_use"
+                    elif new_allocation != runtime.manager.allocation_mode and (
+                        saved["active"] or saved["waiting"]
+                    ):
+                        errors["base"] = "allocation_mode_in_use"
+                    elif new_mode == runtime.manager.capacity_mode:
+                        try:
+                            runtime.manager.queue.validate_capacity_limit(new_limit)
+                        except ValueError:
+                            errors["base"] = "max_active_below_reserved"
+                    if not errors and (
                         new_strategy != runtime.manager.strategy
                         or (
-                            not pending_plugin_form
+                            not pending_strategy
                             and candidate_config != runtime.manager.queue.strategy_config
                         )
                     ) and (saved["active"] or saved["waiting"]):
                         errors["base"] = "strategy_in_use"
-                    # Defer pausing until a plugin-specific form has finished.
-                    if not errors and (
-                        not get_provider(new_strategy).config_fields
-                        or getattr(self, "_strategy_config_ready", False)
-                    ):
+                    if not errors and not pending_strategy and not pending_weights:
                         runtime.manager.pause()
             elif not errors:
                 try:
@@ -252,12 +623,28 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                         raise ValueError("Invalid stored queue")
                     if not set(bindings.values()).issubset(selected):
                         errors["base"] = "entities_in_use"
-                    elif new_limit < len(active):
-                        errors["base"] = "max_active_below_reserved"
-                    elif (
+                    else:
+                        capacity_error = _saved_capacity_error(
+                            saved, new_mode, new_limit
+                        )
+                        if capacity_error is not None:
+                            errors["base"] = capacity_error
+                    if not errors and (
+                        new_recurrence != saved.get(
+                            "recurrence_mode", DEFAULT_RECURRENCE_MODE
+                        )
+                    ) and (active or waiting):
+                        errors["base"] = "recurrence_mode_in_use"
+                    if not errors and (
+                        new_allocation != saved.get(
+                            "allocation_mode", DEFAULT_ALLOCATION_MODE
+                        )
+                    ) and (active or waiting):
+                        errors["base"] = "allocation_mode_in_use"
+                    if not errors and (
                         new_strategy != saved.get("strategy", current_strategy)
                         or (
-                            not pending_plugin_form
+                            not pending_strategy
                             and candidate_config != saved.get(
                                 "strategy_config", current_config
                             )
@@ -272,21 +659,40 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
                     CONF_MONITORED_ENTITIES: selected,
                     CONF_MAX_ACTIVE: new_limit,
                     CONF_STRATEGY: new_strategy,
+                    CONF_CAPACITY_MODE: new_mode,
+                    CONF_RECURRENCE_MODE: new_recurrence,
+                    CONF_ALLOCATION_MODE: new_allocation,
                 }
-                if get_provider(new_strategy).config_fields:
-                    if not getattr(self, "_strategy_config_ready", False):
-                        self._pending_options = pending
-                        return await self.async_step_strategy()
-                    pending[CONF_STRATEGY_CONFIG] = self._validated_strategy_config
-                    self._strategy_config_ready = False
-                else:
-                    pending[CONF_STRATEGY_CONFIG] = {}
+                self._pending_options = pending
+                if has_fields and not strategy_ready:
+                    return await self.async_step_strategy()
+                pending[CONF_STRATEGY_CONFIG] = (
+                    self._validated_strategy_config if has_fields else {}
+                )
+                if pending_weights:
+                    return await self.async_step_weights()
+                pending[CONF_ENTITY_WEIGHTS] = (
+                    self._validated_weights if new_mode == "weighted" and selected else {}
+                )
+                self._strategy_config_ready = False
+                self._weights_ready = False
                 return self.async_create_entry(data=pending)
 
         schema = vol.Schema(
             {
                 vol.Required(CONF_MAX_ACTIVE, default=new_limit): MAX_ACTIVE_SELECTOR,
-                vol.Required(CONF_STRATEGY, default=new_strategy): strategy_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_STRATEGY, default=new_strategy
+                ): strategy_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_CAPACITY_MODE, default=new_mode
+                ): capacity_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_RECURRENCE_MODE, default=new_recurrence
+                ): recurrence_mode_selector(self.hass.config.language),
+                vol.Required(
+                    CONF_ALLOCATION_MODE, default=new_allocation
+                ): allocation_mode_selector(self.hass.config.language),
                 vol.Optional(
                     CONF_MONITORED_ENTITIES, default=selected
                 ): ENTITIES_SELECTOR,
@@ -297,7 +703,7 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
         )
 
     async def async_step_strategy(self, user_input: dict | None = None):
-        """Configure the selected provider before committing options."""
+        """Configure the selected scheduling provider before final validation."""
         pending = self._pending_options
         strategy = pending[CONF_STRATEGY]
         errors: dict[str, str] = {}
@@ -321,7 +727,6 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
             else:
                 self._validated_strategy_config = normalized
                 self._strategy_config_ready = True
-                # Revalidate under the runtime lock before persisting changes.
                 result = await self.async_step_init(dict(pending))
                 if result["type"] == "form" and result.get("step_id") == "init":
                     self._strategy_config_ready = False
@@ -332,5 +737,34 @@ class ResourceQueueOptionsFlow(OptionsFlowWithReload):
             data_schema=strategy_form_schema(
                 strategy, user_input or previous, self.hass.config.language
             ),
+            errors=errors,
+        )
+
+    async def async_step_weights(self, user_input: dict | None = None):
+        """Set native numeric defaults for all selected supervised entities."""
+        pending = self._pending_options
+        entities = pending[CONF_MONITORED_ENTITIES]
+        capacity = pending[CONF_MAX_ACTIVE]
+        previous = self.config_entry.options.get(
+            CONF_ENTITY_WEIGHTS, self.config_entry.data.get(CONF_ENTITY_WEIGHTS, {})
+        )
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                normalized = _normalize_weights(entities, user_input, capacity)
+            except ValueError:
+                errors["base"] = "invalid_weights"
+            else:
+                self._validated_weights = normalized
+                self._weights_ready = True
+                # Revalidate the queue under its lock before committing settings.
+                result = await self.async_step_init(dict(pending))
+                if result["type"] == "form" and result.get("step_id") == "init":
+                    self._weights_ready = False
+                return result
+
+        return self.async_show_form(
+            step_id="weights",
+            data_schema=_weights_schema(entities, user_input or previous, capacity),
             errors=errors,
         )

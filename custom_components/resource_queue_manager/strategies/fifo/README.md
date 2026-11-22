@@ -1,15 +1,19 @@
-# FIFO strategy provider
+# FIFO scheduling provider
 
-**Key:** `fifo` · **Policy:** first in, first out.
+**Key:** `fifo` · **Policy:** first in, first out (oldest waiting request first).
 
-The oldest pending request is promoted when a verified OFF release frees a
-reservation. The generic engine guarantees the capacity limit. Already-active
-reservations are never preempted.
+FIFO controls **waiting order only**. It does not grant capacity or operate Home Assistant devices. Once an active reservation is released safely, the queue engine considers the oldest pending request. An already-active grant is never preempted.
 
-**Provider files:** [provider.py](provider.py), [strategy.py](strategy.py),
-[config.py](config.py), [request.py](request.py).
+| Allocation mode | FIFO behavior |
+| --- | --- |
+| **Strict** (default) | If the first pending request cannot fit, all later requests remain waiting |
+| **Backfill** | If the first pending request cannot fit, later requests that fit can receive grants; the blocked request keeps its position |
 
-**Config fields:** none. **Request metadata fields:** none.
+**Provider files:** [provider.py](provider.py), [strategy.py](strategy.py), [config.py](config.py), [request.py](request.py).
+
+**Queue-wide strategy fields:** none. **Per-request strategy fields:** none. Capacity mode (Classic/Weighted), effective weight, allocation mode and recurrence mode are configured **independently** of FIFO.
+
+### Basic request
 
 ```yaml
 action: resource_queue_manager.request
@@ -19,6 +23,8 @@ data:
   entity_id: light.demo_lamp
 ```
 
-This is the default strategy and the migration target for legacy v0.4 queues.
-See the [top-level README](../../../../README.md) for safe setup and the
-[upgrade guide](../../../../docs/MIGRATION_v0.4_to_v1.md).
+For a **Weighted** queue, you may also supply `engine_data: {weight: 3}` to override this new request's entity default. Duplicate waiting requests can be counted if the queue uses `recurrence_mode: count`. Neither option changes FIFO's order.
+
+FIFO is the default strategy and preserves the legacy single-queue behavior during migration. All queues restart in `paused` and need an explicit `resume` after supervising entity states.
+
+[Main README](../../../../README.md) · [v1.0 → v1.1 migration](../../../../docs/MIGRATION_v1.0_to_v1.1.md) · [Strategy architecture](../README.md)
