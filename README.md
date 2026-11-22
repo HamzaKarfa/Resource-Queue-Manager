@@ -18,7 +18,10 @@
 
 > **Important:** Resource Queue Manager never switches devices ON or OFF. Your automations do that after obtaining a grant. It is **not a certified electrical load-shedding, thermal safety or overcurrent protection device**. Manual commands, external automation and unsupervised equipment can bypass it.
 
-## v1.1 development preview — not released
+## v1.1 release candidate — not stable
+
+> **Pre-release v1.1.0-rc.1:** This branch is the integrated candidate containing the v1.1 feature stack. It is intended for testing only; `main` and stable v1.0.0 remain unchanged. Read the [RC notes](docs/releases/v1.1.0-rc.1.md), [migration guide](docs/MIGRATION_v1.0_to_v1.1.md) and [manual acceptance gates](docs/RELEASE_CHECKLIST_v1.1.md) before installing.
+
 
 The v1.1 feature branches add a **third independent concern** to each queue. Scheduling still chooses the next request (FIFO/LIFO/Priority FIFO), capacity decides how much can run, and recurrence decides what to do when the same waiting `resource_id` is requested again. These features are **not available in published v1.0.0**.
 
