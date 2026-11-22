@@ -5,6 +5,7 @@ synchronous; the HA adapter serializes state mutations and disk writes.
 """
 
 from collections.abc import Callable, Iterable, Mapping
+from .allocation import DEFAULT_ALLOCATION_MODE, validate_allocation_mode
 from .capacity import CAPACITY_PROVIDERS, DEFAULT_CAPACITY_MODE
 from .recurrence import DEFAULT_RECURRENCE_MODE, RECURRENCE_PROVIDERS
 from .engine import ResourceQueue, QueueResult
@@ -37,10 +38,12 @@ class ResourceQueueCoordinator:
         capacity_mode: str = DEFAULT_CAPACITY_MODE,
         entity_weights: Mapping[str, int] | None = None,
         recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
+        allocation_mode: str = DEFAULT_ALLOCATION_MODE,
     ) -> None:
         self.queue = ResourceQueue(
             max_active, strategy, strategy_config,
             capacity_mode=capacity_mode, recurrence_mode=recurrence_mode,
+            allocation_mode=allocation_mode,
         )
         self._entity_state = entity_state
         self._entities: dict[str, str] = {}
@@ -82,6 +85,7 @@ class ResourceQueueCoordinator:
         capacity_mode: str = DEFAULT_CAPACITY_MODE,
         entity_weights: Mapping[str, int] | None = None,
         recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
+        allocation_mode: str = DEFAULT_ALLOCATION_MODE,
     ) -> "ResourceQueueCoordinator":
         """Restore saved request order and entity registry; always start paused."""
         if not isinstance(saved, dict):
@@ -98,6 +102,9 @@ class ResourceQueueCoordinator:
         saved_config = saved.get("strategy_config", {})
         saved_capacity_mode = saved.get("capacity_mode", DEFAULT_CAPACITY_MODE)
         saved_recurrence_mode = saved.get("recurrence_mode", DEFAULT_RECURRENCE_MODE)
+        saved_allocation_mode = validate_allocation_mode(
+            saved.get("allocation_mode", DEFAULT_ALLOCATION_MODE)
+        )
         if type(saved_capacity_mode) is not str or saved_capacity_mode not in CAPACITY_PROVIDERS:
             raise QueueStateError("Unknown saved capacity mode")
         if type(saved_recurrence_mode) is not str or saved_recurrence_mode not in RECURRENCE_PROVIDERS:
@@ -120,6 +127,10 @@ class ResourceQueueCoordinator:
             raise QueueStateError(
                 "Cannot change recurrence mode while reservations or requests are pending"
             )
+        if saved_allocation_mode != allocation_mode and (saved_active or saved_waiting):
+            raise QueueStateError(
+                "Cannot change allocation mode while reservations or requests are pending"
+            )
         queue = ResourceQueue.from_snapshot(
             stored_limit, saved_active, saved_waiting,
             strategy=strategy, strategy_config=configured,
@@ -128,6 +139,7 @@ class ResourceQueueCoordinator:
             engine_request_data=saved.get("engine_request_data", {}),
             recurrence_mode=recurrence_mode,
             occurrence_counts=saved.get("occurrence_counts"),
+            allocation_mode=allocation_mode,
         )
         try:
             queue.validate_capacity_limit(max_active)
@@ -158,7 +170,7 @@ class ResourceQueueCoordinator:
             max_active, entity_state, monitored_entities,
             strategy=strategy, strategy_config=configured,
             capacity_mode=capacity_mode, entity_weights=entity_weights,
-            recurrence_mode=recurrence_mode,
+            recurrence_mode=recurrence_mode, allocation_mode=allocation_mode,
         )
         for resource, entity in bindings.items():
             instance._validate_resource_id(resource)
@@ -194,6 +206,7 @@ class ResourceQueueCoordinator:
             "engine_request_data": self.queue.export_engine_request_data(),
             "entity_weights": dict(self._entity_weights),
             "recurrence_mode": self.recurrence_mode,
+            "allocation_mode": self.allocation_mode,
             "occurrence_counts": self.queue.export_occurrence_counts(),
             "bindings": dict(self._entities),
         }
@@ -217,6 +230,10 @@ class ResourceQueueCoordinator:
     @property
     def recurrence_mode(self) -> str:
         return self.queue.recurrence_mode
+
+    @property
+    def allocation_mode(self) -> str:
+        return self.queue.allocation_mode
 
     @property
     def entity_weights(self) -> dict[str, int]:
