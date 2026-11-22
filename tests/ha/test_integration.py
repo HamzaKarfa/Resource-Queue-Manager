@@ -286,10 +286,7 @@ async def test_edit_max_slots_from_options_and_persist(
     form = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 2,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 2, "capacity_mode": "classic"},
     )
     assert result["type"].value == "create_entry"
     await hass.async_block_till_done()
@@ -319,10 +316,7 @@ async def test_options_reject_limit_below_existing_active_reservations(
     flow = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 2,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 2, "capacity_mode": "classic"},
     )
     assert result["type"].value == "form"
     assert result["errors"]["base"] == "max_active_below_reserved"
@@ -342,10 +336,7 @@ async def test_increase_max_with_waiters_promotes_only_on_resume(
     flow = await options_form(hass, queue_entry, "capacity")
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 4,
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"max_active": 4, "capacity_mode": "classic"},
     )
     assert result["type"].value == "create_entry"
     await hass.async_block_till_done()
@@ -472,11 +463,7 @@ async def test_options_reject_strategy_change_with_pending_work(
     form = await options_form(hass, queue_entry, "scheduling")
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "lifo",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "lifo", "allocation_mode": "strict"},
     )
     assert result["type"].value == "form"
     assert result["errors"]["base"] == "strategy_in_use"
@@ -566,14 +553,10 @@ async def test_options_flow_updates_provider_settings_and_recovers(
     flow = await options_form(hass, queue_entry, "scheduling")
     selected = await hass.config_entries.options.async_configure(
         flow["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
     assert selected["type"].value == "form"
-    assert selected["step_id"] == "strategy"
+    assert selected["step_id"] == "scheduling_details"
     finished = await hass.config_entries.options.async_configure(
         flow["flow_id"], {"threshold": 3, "flavor": "one"}
     )
@@ -595,13 +578,9 @@ async def test_strategy_specific_options_cannot_change_with_active_booking(
     initial = await options_form(hass, queue_entry, "scheduling")
     strategy_step = await hass.config_entries.options.async_configure(
         initial["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
-    assert strategy_step["step_id"] == "strategy"
+    assert strategy_step["step_id"] == "scheduling_details"
     saved = await hass.config_entries.options.async_configure(
         initial["flow_id"], {"threshold": 3, "flavor": "one"}
     )
@@ -614,13 +593,9 @@ async def test_strategy_specific_options_cannot_change_with_active_booking(
     form = await options_form(hass, queue_entry, "scheduling")
     options = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {
-            "max_active": 3,
-            "strategy": "sample_policy",
-            "monitored_entities": [f"light.relay_{i}" for i in range(1, 6)],
-        },
+        {"strategy": "sample_policy", "allocation_mode": "strict", "edit_strategy_options": True},
     )
-    assert options["step_id"] == "strategy"
+    assert options["step_id"] == "scheduling_details"
     rejected = await hass.config_entries.options.async_configure(
         form["flow_id"], {"threshold": 4, "flavor": "one"}
     )
