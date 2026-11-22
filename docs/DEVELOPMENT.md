@@ -1,6 +1,6 @@
 # Development and integration testing
 
-This document covers the **v1.1.0 stable-ready code** as included in the public **v1.1.0-rc.2 pre-release** for Home Assistant 2026.11+. Stable v1.0.0 remains the latest stable tag until a separately approved v1.1.0 release. Test the complete RC2 tag on a separate Home Assistant installation.
+This document covers **Resource Queue Manager v1.1.0**, including Weighted capacity, Strict/Backfill, recurrence counting and the Home Assistant category-based options UI. It requires Home Assistant 2026.11+. Review the [v1.1.0 stable release notes](releases/v1.1.0.md); the v1.1.0-rc.2 tag remains in the release history for regression reference.
 
 ## Repository layout
 
@@ -59,7 +59,7 @@ Use **Python 3.14** for the pinned Home Assistant test fixture package, matching
 git clone https://github.com/HamzaKarfa/Resource-Queue-Manager.git
 cd Resource-Queue-Manager
 git fetch origin
-git switch --detach v1.1.0-rc.2  # published prerelease snapshot
+git switch --detach v1.1.0  # stable release snapshot
 
 python3.14 -m venv .venv
 source .venv/bin/activate
@@ -141,6 +141,6 @@ python -m pip install "pytest-homeassistant==2026.11.1"
 python -m pytest -q tests/ha
 ```
 
-The published RC2 manifest is `1.1.0-rc.2` and **must not be mistaken for the planned stable version**. For stable v1.1, see [manual acceptance checklist](RELEASE_CHECKLIST_v1.1.md) and [migration guide](MIGRATION_v1.0_to_v1.1.md). Review the integration commit on `main`, pass all CI checks there, and validate migration, multiple queues, Weighted/Strict/Backfill, Count, pause/recovery and rollback on a separate real HA instance. Only then authorize the stable-specific manifest bump to `1.1.0` and create a guarded v1.1 release workflow. The existing `publish-v1.yml` workflow targets **v1.0.0 only**.
+The stable manifest is `1.1.0`. Publication uses the guarded [v1.1 merge workflow](../.github/workflows/publish-v1.1-approved-merge.yml), which only runs after the explicitly authorized two-parent PR #32 merge and re-tests Python 3.13/3.14, Home Assistant 2026.11, HACS and hassfest before tagging the exact merge SHA. The older `publish-v1.yml` targets v1.0.0 only. Perform real-device, migration and rollback checks separately from automated fixtures; use the [acceptance checklist](RELEASE_CHECKLIST_v1.1.md) and [migration guide](MIGRATION_v1.0_to_v1.1.md).
 
-See [v0.4 → v1 migration](MIGRATION_v0.4_to_v1.md), [v1.0 → v1.1 migration](MIGRATION_v1.0_to_v1.1.md), [stable v1.1 draft notes](releases/v1.1.0-draft.md) and the [v1.1 acceptance checklist](RELEASE_CHECKLIST_v1.1.md).
+See [v0.4 → v1 migration](MIGRATION_v0.4_to_v1.md), [v1.0 → v1.1 migration](MIGRATION_v1.0_to_v1.1.md), [v1.1 stable notes](releases/v1.1.0.md) and the [v1.1 acceptance checklist](RELEASE_CHECKLIST_v1.1.md).
