@@ -110,6 +110,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     ATTR_ENTITY_ID: runtime.manager.entity_for(resource_id),
                     "config_entry_id": entry_id,
                     "occurrences": runtime.manager.queue.occurrences(resource_id),
+                    "effective_weight": runtime.manager.queue.effective_weight(resource_id),
+                    "capacity_mode": runtime.manager.capacity_mode,
                 },
             )
 
