@@ -21,6 +21,7 @@ from .const import (
     ATTR_ENGINE_DATA,
     CONF_CAPACITY_MODE,
     CONF_ENTITY_WEIGHTS,
+    CONF_RECURRENCE_MODE,
     CONF_MAX_ACTIVE,
     CONF_STRATEGY,
     CONF_STRATEGY_CONFIG,
@@ -38,6 +39,7 @@ from .coordinator import ResourceQueueCoordinator, QueueStateError
 from .engine import QueueResult
 from .strategies import DEFAULT_STRATEGY
 from .capacity import DEFAULT_CAPACITY_MODE
+from .recurrence import DEFAULT_RECURRENCE_MODE
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -107,6 +109,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     ATTR_RESOURCE_ID: resource_id,
                     ATTR_ENTITY_ID: runtime.manager.entity_for(resource_id),
                     "config_entry_id": entry_id,
+                    "occurrences": runtime.manager.queue.occurrences(resource_id),
                 },
             )
 
@@ -221,6 +224,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entity_weights = entry.options.get(
         CONF_ENTITY_WEIGHTS, entry.data.get(CONF_ENTITY_WEIGHTS)
     )
+    recurrence_mode = entry.options.get(
+        CONF_RECURRENCE_MODE,
+        entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
+    )
     store = Store(
         hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
     )
@@ -238,6 +245,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 strategy_config=strategy_config,
                 capacity_mode=capacity_mode,
                 entity_weights=entity_weights,
+                recurrence_mode=recurrence_mode,
             )
         else:
             manager = ResourceQueueCoordinator.from_state(
