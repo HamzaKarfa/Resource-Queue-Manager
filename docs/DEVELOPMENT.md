@@ -1,6 +1,6 @@
 # Development and integration testing
 
-This document covers Resource Queue Manager v1, a custom integration for Home Assistant 2026.11+ with a pure-Python scheduling engine. Use the current release tag or feature branch when testing unreleased changes.
+This document covers the published v1.0 architecture and the **unreleased v1.1 development branches** for Home Assistant 2026.11+. Use the stable release tag for production and a complete feature branch on a separate test installation for v1.1.
 
 ## Repository layout
 
@@ -12,9 +12,11 @@ custom_components/resource_queue_manager/
 ├── coordinator.py         # Entity binding, recovery and safety rules
 ├── engine.py              # Generic queue capacity and scheduling
 ├── entity_supervision.py  # Domain-specific ON/OFF and logical rules
-├── sensor.py              # Four sensors for each config entry
+├── sensor.py              # Four sensors per entry, with v1.1 capacity and count attributes
 ├── services.yaml          # Common Home Assistant action schema
 ├── strategy_forms.py      # Provider settings -> native HA selectors
+├── capacity/              # Classic + weighted capacity providers
+├── recurrence/            # Ignore + count pending-duplicate providers
 ├── strings.json           # Canonical English UI definitions
 ├── translations/          # English/French translations
 └── strategies/
@@ -34,7 +36,10 @@ tests/
 ├── test_recovery.py
 ├── test_priority_fifo.py
 ├── test_supervision.py
-└── ha/test_integration.py
+├── test_weighted_capacity.py
+├── test_recurrence.py
+├── test_snapshot_migration_v11.py
+└── ha/                     # Integration tests incl. v1.1 contracts
 ```
 
 Core scheduling policies must remain independent from Home Assistant imports. Every integration config entry has its own queue, independent lock and `.storage` key.
@@ -51,7 +56,7 @@ Use **Python 3.14** for the pinned Home Assistant test fixture package, matching
 git clone https://github.com/HamzaKarfa/Resource-Queue-Manager.git
 cd Resource-Queue-Manager
 git fetch origin
-git checkout feat/v1-multi-queue-strategies
+git switch docs/v1.1-regression-release-readiness  # unreleased development preview
 
 python3.14 -m venv .venv
 source .venv/bin/activate
@@ -59,7 +64,7 @@ python -m pip install --upgrade pip
 python -m unittest discover -s tests -v
 
 python -m pip install "pytest-homeassistant==2026.11.1"
-python -m pytest -q tests/ha/test_integration.py
+python -m pytest -q tests/ha
 ```
 
 The Home Assistant fixture package installs its declared dependencies; the pure-Python tests require no Home Assistant installation. CI also runs HACS validation and hassfest. No physical relays are used by tests.
@@ -104,13 +109,21 @@ REQUEST_FIELDS = (
 
 **Boundaries:** strategies may rank or insert waiting requests. They may not bypass OFF confirmation, alter saved reservations directly, switch HA entities, preempt active reservations, register arbitrary services, or claim to provide electrical safety. Advanced policies needing time-based aging, scheduling callbacks, dynamic priorities, or different persistence need a reviewed extension of these contracts.
 
+## Capacity and recurrence extension contracts (v1.1 development)
+
+- The capacity policy determines admission and restore-capacity validation, independently of FIFO/LIFO/Priority FIFO. Registered providers live in `capacity/registry.py`. `classic` consumes one slot; `weighted` consumes integer units with no second slot limit.
+- The recurrence policy determines how duplicate **pending** `resource_id` requests are handled. Registered providers live in `recurrence/registry.py`; the default `ignore` does not increment, while `count` increments without modifying position, priority, effective weight or reservation count.
+- The engine owns immutable effective request weights, occurrence counts and ID-only active/waiting snapshots. Changes to capacity modes and recurrence policy must fail with nonempty queues.
+- Do not publish grant events until durable storage succeeds. `sensor.py` preserves the four original IDs and exposes capacity metrics and occurrence metadata.
+- New providers must have isolated pure-Python implementations and regression tests; there is no dynamic import of arbitrary user modules.
+
 ## Contract and backwards compatibility
 
-- The public request action accepts the standard `resource_id`, `entity_id`, optional `config_entry_id` and optional `strategy_data`.
+- The public request action accepts the standard `resource_id`, `entity_id`, optional `config_entry_id` and optional `strategy_data`. In **v1.1 development**, `engine_data` is also accepted and provider-validated (for example `engine_data.weight` in weighted mode).
 - In a multi-entry setup, all actions require `config_entry_id` and route to exactly one queue.
 - Every queue starts paused on setup/reload, and pending grants resume only after explicit verification.
 - A queue is not allowed to switch strategy/settings with active or waiting work.
-- The persisted `active` and `waiting` arrays remain **ID-only**, while `request_data` persists validated metadata separately.
+- The persisted `active` and `waiting` arrays remain **ID-only**, while `request_data` persists validated scheduling metadata separately. v1.1 also saves effective weighted costs, per-entity defaults and occurrence counts.
 - Legacy FIFO snapshots without newer keys remain valid. Changing the serialized format must include an explicit migration test.
 - Priority FIFO is **non-preemptive**, and ties preserve FIFO arrival order.
 
@@ -121,9 +134,9 @@ Version tags and GitHub releases are deliberately **not** published from pull re
 ```bash
 python -m unittest discover -s tests -v
 python -m pip install "pytest-homeassistant==2026.11.1"
-python -m pytest -q tests/ha/test_integration.py
+python -m pytest -q tests/ha
 ```
 
-Before release, verify all three GitHub workflows pass, the `manifest.json` version is `1.0.0`, release notes exist, a v0.4 backup upgrades safely, multi-queue service targeting works on a real test instance, and each queue requires an explicit resume. The separate release workflow requires a manual confirmation token and only runs on `main`; it does not trigger on PRs or merges.
+For the existing v1.0 release, the applicable version is `1.0.0`. For **unreleased v1.1**, see [the manual acceptance checklist](RELEASE_CHECKLIST_v1.1.md) and [migration guide](MIGRATION_v1.0_to_v1.1.md). Keep the manifest at `1.0.0` until an explicitly authorized v1.1 release commit. Validate a fresh v1.0 upgrade, two independent queues, weighted allocation, count-mode events, paused recovery and rollback on a separate HA test instance before publication. The separate release workflow requires a manual confirmation token and only runs on `main`; it does not trigger on PRs or merges.
 
 See [migration steps](MIGRATION_v0.4_to_v1.md), [release notes](releases/v1.0.0.md), and the [manual acceptance checklist](RELEASE_CHECKLIST_v1.md).
