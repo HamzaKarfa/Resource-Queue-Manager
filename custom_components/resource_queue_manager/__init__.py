@@ -22,6 +22,7 @@ from .const import (
     CONF_CAPACITY_MODE,
     CONF_ENTITY_WEIGHTS,
     CONF_RECURRENCE_MODE,
+    CONF_ALLOCATION_MODE,
     CONF_MAX_ACTIVE,
     CONF_STRATEGY,
     CONF_STRATEGY_CONFIG,
@@ -40,6 +41,7 @@ from .engine import QueueResult
 from .strategies import DEFAULT_STRATEGY
 from .capacity import DEFAULT_CAPACITY_MODE
 from .recurrence import DEFAULT_RECURRENCE_MODE
+from .allocation import DEFAULT_ALLOCATION_MODE
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -112,6 +114,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
                     "occurrences": runtime.manager.queue.occurrences(resource_id),
                     "effective_weight": runtime.manager.queue.effective_weight(resource_id),
                     "capacity_mode": runtime.manager.capacity_mode,
+                    "allocation_mode": runtime.manager.allocation_mode,
                 },
             )
 
@@ -230,6 +233,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_RECURRENCE_MODE,
         entry.data.get(CONF_RECURRENCE_MODE, DEFAULT_RECURRENCE_MODE),
     )
+    allocation_mode = entry.options.get(
+        CONF_ALLOCATION_MODE,
+        entry.data.get(CONF_ALLOCATION_MODE, DEFAULT_ALLOCATION_MODE),
+    )
     store = Store(
         hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
     )
@@ -248,6 +255,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 capacity_mode=capacity_mode,
                 entity_weights=entity_weights,
                 recurrence_mode=recurrence_mode,
+                allocation_mode=allocation_mode,
             )
         else:
             manager = ResourceQueueCoordinator.from_state(
@@ -263,6 +271,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 capacity_mode=capacity_mode,
                 entity_weights=entity_weights,
                 recurrence_mode=recurrence_mode,
+                allocation_mode=allocation_mode,
                 legacy_max_active=entry.data.get(
                     CONF_MAX_ACTIVE, DEFAULT_MAX_ACTIVE
                 ),
