@@ -18,6 +18,37 @@
 
 > **Important:** Resource Queue Manager never switches devices ON or OFF. Your automations do that after obtaining a grant. It is **not a certified electrical load-shedding, thermal safety or overcurrent protection device**. Manual commands, external automation and unsupervised equipment can bypass it.
 
+## v1.1 development preview — not released
+
+The v1.1 feature branches add a **third independent concern** to each queue. Scheduling still chooses the next request (FIFO/LIFO/Priority FIFO), capacity decides how much can run, and recurrence decides what to do when the same waiting `resource_id` is requested again. These features are **not available in published v1.0.0**.
+
+| Setting | Default (compatible with v1.0) | Optional v1.1 behavior |
+| --- | --- | --- |
+| Scheduling | FIFO (or an existing v1 strategy) | FIFO, LIFO or Priority FIFO — unchanged |
+| Capacity mode | `classic`: 1–50 active slots | `weighted`: a shared 1–100000 unit budget, **no second slot limit** |
+| Entity weight | 1 per active slot | Native numeric default for every supervised entity, initially 1 |
+| Repeated request | `ignore`: idempotent | `count`: count repeated **waiting** requests with the same `resource_id` |
+
+In weighted mode, this example overrides the entity's configured default **for one new request**, without modifying the saved default:
+
+```yaml
+action: resource_queue_manager.request
+data:
+  config_entry_id: YOUR_QUEUE_ENTRY_ID
+  resource_id: heater_living_room
+  entity_id: light.heater_living_room
+  engine_data:
+    weight: 25
+```
+
+The weight is frozen for the lifetime of the request (including waiting and restart). Only active reservations consume units. A smaller waiting request cannot skip a larger first request that does not fit; allocation is strict head-of-line.
+
+With recurrence set to `count`, the first request has occurrence count 1; subsequent calls for the **same waiting** `resource_id` increment its count, without changing queue position, priority, capacity or number of entries. Calls for an active ID do not increase it. Grant events add `occurrences`, `effective_weight` and `capacity_mode`; existing sensors keep their IDs and expose `capacity_unit`, `capacity_total`, `capacity_used`, `capacity_remaining`, `effective_weights` and `occurrence_counts` attributes.
+
+**Version compatibility:** existing queues stay `classic + ignore`. Old YAML requires no edits. A queue still restarts paused and must be resumed after checking supervised entities. Switching policies with existing active/waiting requests is rejected. The application does not switch devices or calculate watts.
+
+**Before testing v1.1**, read the [v1.0 → v1.1 migration guide](docs/MIGRATION_v1.0_to_v1.1.md), [recurrence guide](docs/V1.1_RECURRENCE.md) and [maintainer release checklist](docs/RELEASE_CHECKLIST_v1.1.md). The latest stacked review branch is **not** a Marketplace release; test it separately and keep a rollback backup.
+
 ## What's new in v1
 
 - **Multiple named queues** in one integration: e.g. Heating (capacity 3), Ventilation (2), Irrigation (1).
@@ -63,7 +94,7 @@ Marketplace installs the latest published stable version. To inspect unreleased 
 
 Use a **separate Home Assistant test instance**, or make a full backup first and disable real-device automations. Files from a feature branch are not automatically part of the Marketplace release.
 
-1. Browse [the development branch](https://github.com/HamzaKarfa/Resource-Queue-Manager/tree/feat/v1-multi-queue-strategies/custom_components/resource_queue_manager) when it exists, or the branch under review.
+1. Browse [the development branch](https://github.com/HamzaKarfa/Resource-Queue-Manager/tree/docs/v1.1-regression-release-readiness/custom_components/resource_queue_manager) when it exists, or the branch under review.
 2. Copy the **whole** `custom_components/resource_queue_manager` directory from the selected branch into the test instance's `config/custom_components/resource_queue_manager`; do not mix component files from different versions.
 3. Restart Home Assistant, then go to **Settings → Devices & services → Add integration → Resource Queue Manager**.
 4. Add an entry and configure a **test lamp** or other low-risk entity. Repeat to test a second queue.
@@ -263,11 +294,11 @@ Read the [detailed v0.4 → v1 migration procedure](docs/MIGRATION_v0.4_to_v1.md
 ```bash
 python -m unittest discover -s tests -v
 python -m pip install "pytest-homeassistant==2026.11.1"
-python -m pytest -q tests/ha/test_integration.py
+python -m pytest -q tests/ha
 ```
 
 CI also validates HACS/Marketplace metadata and Home Assistant hassfest. Tests simulate Home Assistant states, **not physical devices**. See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for environment setup and plugin development.
 
-This branch stages manifest version **1.0.0** for review. The version in `manifest.json` is the component version; the GitHub Release tag will be `v1.0.0` when explicitly published after merging. **No merge, tag or public release is performed by pushing these preparation commits.**
+The current development branch deliberately keeps the stable manifest version **1.0.0**. A v1.1 release requires separately approved version-bump and publication steps. **None of these development PRs merges, tags or publishes a release automatically.**
 
 The repository is distributed under the [MIT License](LICENSE).
