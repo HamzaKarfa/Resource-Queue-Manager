@@ -10,6 +10,37 @@
 
 > **Sécurité :** l'intégration ne commande jamais directement les relais. Tes automatisations décident d'allumer et d'éteindre les appareils après réservation. Ce logiciel n'est ni un délesteur électrique certifié, ni un système de protection thermique ; les sécurités matérielles restent indispensables.
 
+## Aperçu de la v1.1 — en développement, non publiée
+
+La v1.1 sépare trois responsabilités indépendantes : **l'ordonnancement** (FIFO/LIFO/FIFO prioritaire), **la capacité** (places ou unités) et **le traitement des demandes répétées** (ignorées ou comptées).
+
+| Paramètre | Par défaut, compatible v1.0 | Possibilité en v1.1 |
+| --- | --- | --- |
+| Stratégie | FIFO ou stratégie déjà choisie | FIFO, LIFO, FIFO prioritaire, sans modification |
+| Capacité | `classic` : 1 à 50 places actives | `weighted` : 1 à 100000 unités, **sans deuxième limite de places** |
+| Poids des entités | Une place par réservation | Une valeur entière par entité supervisée, initialement 1 |
+| Récurrences | `ignore` : comportement idempotent | `count` : compter les répétitions d'un `resource_id` **en attente** |
+
+Avec une capacité totale de **100 unités**, la valeur `engine_data.weight` permet d'utiliser 25 unités **pour cette nouvelle demande uniquement** et ne modifie pas le poids par défaut de l'entité :
+
+```yaml
+action: resource_queue_manager.request
+data:
+  config_entry_id: ID_DE_L_ENTREE
+  resource_id: chauffage_salon
+  entity_id: light.relais_chauffage_salon
+  engine_data:
+    weight: 25
+```
+
+Le poids effectif reste figé pendant l'attente, l'exécution et après redémarrage. Seules les réservations actives consomment des unités. La file conserve un ordre strict : une petite demande ne peut pas dépasser la première demande en attente si celle-ci ne rentre pas dans la capacité restante.
+
+En mode `count`, une demande démarre à `occurrences = 1`. Les répétitions avec le même `resource_id` **encore en attente** augmentent son compteur, sans dupliquer l'entrée, modifier son poids ni sa priorité. Les répétitions d'une demande déjà active sont ignorées. L'événement d'attribution fournit `occurrences`, `effective_weight` et `capacity_mode` ; les quatre capteurs existants conservent leurs identifiants et ajoutent les attributs de capacité, poids et récurrence.
+
+**Compatibilité :** les anciennes files restent en `classic + ignore` et leurs automatisations YAML continuent de fonctionner. Toute file redémarre en `paused`, et le changement de mode nécessite une file vide. Le logiciel ne commande pas les équipements et ne mesure pas les watts.
+
+Pour préparer la mise à niveau, consulter le [guide de migration v1.0 → v1.1](docs/MIGRATION_v1.0_to_v1.1.md), [la documentation des récurrences](docs/V1.1_RECURRENCE.md) et la [checklist de publication](docs/RELEASE_CHECKLIST_v1.1.md). **La v1.1 n'est pas encore publiée sur Marketplace/HACS** : utiliser un Home Assistant de test et conserver une sauvegarde.
+
 ## Les nouveautés de la v1
 
 Chaque instance possède son **nom**, sa **capacité** (entre 1 et 50 réservations simultanées), ses **entités supervisées**, son **algorithme**, ses capteurs et sa sauvegarde. Il est possible de créer plusieurs gestionnaires depuis **Paramètres → Appareils et services → Ajouter une intégration**.
@@ -33,7 +64,7 @@ Pour installer une version stable, rechercher **Resource Queue Manager** dans **
 Pour tester une **branche de développement** avant qu'elle ne soit publiée :
 
 1. Faire une sauvegarde complète ou, de préférence, utiliser un Home Assistant de test.
-2. Récupérer le dossier complet `custom_components/resource_queue_manager` depuis la [branche de développement v1](https://github.com/HamzaKarfa/Resource-Queue-Manager/tree/feat/v1-multi-queue-strategies/custom_components/resource_queue_manager), si elle existe encore, ou depuis la branche en cours de revue.
+2. Récupérer le dossier complet `custom_components/resource_queue_manager` depuis la [branche de développement v1](https://github.com/HamzaKarfa/Resource-Queue-Manager/tree/docs/v1.1-regression-release-readiness/custom_components/resource_queue_manager), si elle existe encore, ou depuis la branche en cours de revue.
 3. Le copier dans le répertoire `config/custom_components/` du Home Assistant de test, sans mélanger les fichiers de versions différentes.
 4. Redémarrer Home Assistant puis ajouter l'intégration **Resource Queue Manager**.
 5. Configurer un nom, une stratégie, une capacité et quelques entités Home Assistant **sans risque** (par exemple une lampe de test, `input_boolean`, `input_number`, `input_text`, `number` ou `text`).
