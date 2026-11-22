@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Créer un gestionnaire de ressources",
-        "description": "Créez une file indépendante. Choisissez une stratégie et les entités Home Assistant à superviser, y compris les helpers.",
+        "title": "Nouvelle file de ressources",
+        "description": "Nommez la file et choisissez les entités supervisées. La capacité, l'ordonnancement et les répétitions seront configurés ensuite.",
         "data": {
           "name": "Nom de la file",
           "max_active": "Limite de capacité",
@@ -159,8 +159,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Ressources, capacité et stratégie",
-        "description": "Configurez les entités, la capacité et la stratégie de cette file. Il faut vider les demandes actives et en attente avant de changer de stratégie.",
+        "title": "Paramètres de la file",
+        "description": "Choisissez la rubrique à modifier. Les autres réglages seront conservés. Ouvrir une rubrique ne met pas la file en pause.",
         "data": {
           "monitored_entities": "Entités supervisées",
           "max_active": "Limite de capacité",
