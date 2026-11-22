@@ -1,6 +1,6 @@
 # Resource Queue Manager — Interface de configuration v1.1
 
-La nouvelle interface évite l'ancien formulaire unique. Elle est présente dans la pré-release **v1.1.0-rc.2** et fait partie des fonctionnalités préparées pour la **v1.1.0 stable**, qui n'est pas encore publiée au moment de la préparation de ce document.
+La nouvelle interface remplace l'ancien formulaire unique dans **Resource Queue Manager v1.1.0**. Elle avait été introduite dans la pré-release **v1.1.0-rc.2**.
 
 ## Modification d'une file existante
 
@@ -36,4 +36,4 @@ La première configuration suit désormais un assistant :
 
 La fonctionnalité **ne change pas le moteur** : les paramètres stockés, `resource_id`, `strategy_data`, `engine_data`, les capteurs et les événements continuent de fonctionner comme précédemment. Les modes par défaut des installations historiques restent `classic`, `fifo`, `strict` et `ignore` en l'absence de configuration contraire.
 
-Cette interface et Backfill sont déjà intégrés dans la [pré-release RC2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). Les tests automatisés sont validés sur le tag ; l'essai de migration/rollback réel reste une étape distincte avant une publication stable.
+Cette interface et Backfill font partie de la **v1.1.0**. Les tests automatisés de la RC2 ont validé leur fonctionnement ; la sauvegarde et la restauration réelle d'une installation restent à vérifier individuellement.
