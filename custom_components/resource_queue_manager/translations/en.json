@@ -6,15 +6,17 @@
         "description": "Create an independent queue. Select a scheduling strategy and any Home Assistant entities to supervise, including helpers.",
         "data": {
           "name": "Queue name",
-          "max_active": "Concurrent reservations",
+          "max_active": "Capacity limit",
           "strategy": "Scheduling strategy",
-          "monitored_entities": "Supervised entities"
+          "monitored_entities": "Supervised entities",
+          "capacity_mode": "Capacity mode"
         },
         "data_description": {
           "name": "A name to distinguish this queue from other queues (for example Heating).",
-          "max_active": "Enter a whole number from 1 to 50. Suggested starting value: 3.",
+          "max_active": "Classic: 1–50 simultaneous slots. Weighted: 1–100000 shared units (not watts).",
           "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
-          "monitored_entities": "Optional during setup. Devices must belong to only one resource queue."
+          "monitored_entities": "Optional during setup. Devices must belong to only one resource queue.",
+          "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO."
         }
       },
       "strategy": {
@@ -26,6 +28,10 @@
         "data_description": {
           "priority_order": "Highest first: 10 before 1. Lowest first: 1 before 10. Equal priorities retain arrival order."
         }
+      },
+      "weights": {
+        "title": "Default weights per entity",
+        "description": "Enter one positive integer unit cost per supervised entity. These defaults apply only to new requests; engine_data.weight may override a single request. Each form field is the entity ID."
       }
     },
     "error": {
@@ -33,7 +39,9 @@
       "name_in_use": "Another resource queue already uses this name.",
       "invalid_strategy": "Unknown scheduling strategy.",
       "entities_in_use_elsewhere": "A selected entity is already supervised by another resource queue.",
-      "invalid_strategy_options": "The selected strategy settings are invalid."
+      "invalid_strategy_options": "The selected strategy settings are invalid.",
+      "invalid_capacity": "The selected capacity is outside the allowed range for this mode.",
+      "invalid_weights": "Each supervised entity needs a valid integer weight no greater than total capacity."
     }
   },
   "services": {
@@ -56,6 +64,10 @@
         "strategy_data": {
           "name": "Strategy request data",
           "description": "Required for Priority FIFO: strategy_data.priority (a number from 1 to 10). FIFO and LIFO require no extra fields."
+        },
+        "engine_data": {
+          "name": "Capacity request data",
+          "description": "Weighted mode only: engine_data.weight overrides the entity's default unit cost for this request. Must be a positive integer not exceeding total capacity."
         }
       }
     },
@@ -105,13 +117,15 @@
         "description": "Configure the scheduling strategy and the entities supervised by this queue. A strategy cannot change while work remains queued.",
         "data": {
           "monitored_entities": "Supervised entities",
-          "max_active": "Concurrent reservations",
-          "strategy": "Scheduling strategy"
+          "max_active": "Capacity limit",
+          "strategy": "Scheduling strategy",
+          "capacity_mode": "Capacity mode"
         },
         "data_description": {
-          "max_active": "Maximum active reservations at once (1–50). Existing reservations are preserved.",
+          "max_active": "Classic: 1–50 simultaneous slots. Weighted: 1–100000 shared units (not watts).",
           "monitored_entities": "Select any Home Assistant entity, including input_boolean, input_number, input_text, number and text. Generic entity values do not prove physical shutdown.",
-          "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted."
+          "strategy": "FIFO grants by arrival order; LIFO grants the newest waiting request; Priority FIFO ranks waiting requests first. Active reservations are never interrupted.",
+          "capacity_mode": "Classic counts active slots; Weighted counts integer units independently of FIFO/LIFO/Priority FIFO."
         }
       },
       "strategy": {
@@ -123,16 +137,24 @@
         "data_description": {
           "priority_order": "Highest first: 10 before 1. Lowest first: 1 before 10. Equal priorities retain arrival order."
         }
+      },
+      "weights": {
+        "title": "Default weights per entity",
+        "description": "Enter one positive integer unit cost per supervised entity. These defaults apply only to new requests; engine_data.weight may override a single request. Each form field is the entity ID."
       }
     },
     "error": {
       "storage_unavailable": "Cannot read saved bookings. Configuration unchanged.",
-      "max_active_below_reserved": "Cannot reduce the limit below the number of currently active reservations.",
+      "max_active_below_reserved": "The capacity cannot be reduced below existing active usage or any pending request's frozen weight.",
       "entities_in_use": "Cannot deselect an entity with an active or waiting reservation.",
       "strategy_in_use": "Cannot change scheduling strategy until active and waiting reservations have been cleared.",
       "entities_in_use_elsewhere": "One or more selected entities belong to another resource queue.",
       "invalid_strategy": "Unknown scheduling strategy.",
-      "invalid_strategy_options": "The selected strategy settings are invalid."
+      "invalid_strategy_options": "The selected strategy settings are invalid.",
+      "invalid_capacity_mode": "Unknown capacity mode.",
+      "invalid_capacity": "Invalid capacity for the selected mode.",
+      "invalid_weights": "Every supervised entity needs a valid integer weight within the queue capacity.",
+      "capacity_mode_in_use": "A queue must have no active or waiting reservations before changing its capacity mode."
     }
   }
 }
