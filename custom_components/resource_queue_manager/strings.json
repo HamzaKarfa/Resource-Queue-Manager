@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Create a resource queue",
-        "description": "Create an independent queue. Select a scheduling strategy and any Home Assistant entities to supervise, including helpers.",
+        "title": "New resource queue",
+        "description": "Name the queue and choose the entities it will supervise. Capacity, ordering and repeated requests are configured in the next steps.",
         "data": {
           "name": "Queue name",
           "max_active": "Capacity limit",
@@ -159,8 +159,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Resources, capacity and scheduling",
-        "description": "Configure the scheduling strategy and the entities supervised by this queue. A strategy cannot change while work remains queued.",
+        "title": "Queue settings",
+        "description": "Choose what you want to change. The other settings will be preserved. Opening a category does not pause the queue.",
         "data": {
           "monitored_entities": "Supervised entities",
           "max_active": "Capacity limit",
