@@ -14,7 +14,7 @@
 
 **Resource Queue Manager (RQM)** is a Home Assistant custom integration for managing **multiple independent queues of logical resource reservations**. Each queue has its own supervised entities, strategy, capacity, pending requests, recovery state and diagnostic sensors. Your automations request a grant and control the associated devices; RQM never powers equipment on or off itself.
 
-> **Version status:** This README prepares the upcoming **v1.1.0 stable** release. The complete implementation is available in the published [v1.1.0-rc.2 pre-release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). At documentation-preparation time, [v1.0.0](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.0.0) is still the latest **stable** version. Check your installed version; v1.1 features are not available in v1.0.0.
+> **Version 1.1.0:** Stable release documentation. [Release notes](docs/releases/v1.1.0.md) · [Migration from 1.0](docs/MIGRATION_v1.0_to_v1.1.md). The earlier [v1.1.0-rc.2](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2) remains available for reference. Check the installed version: v1.0.0 does not contain the v1.1 features.
 >
 > **Safety:** Reservations are logical. RQM is **not** a certified load-shedding device, power/current meter or electrical/thermal protection system. Independent hardware and electrical protections remain necessary.
 
@@ -91,15 +91,15 @@ Occurrence counts are observable in `occurrence_counts` sensor attributes and in
 
 **Minimum supported Home Assistant version:** **2026.11.0**.
 
-For a **published stable release**, open **Settings → Marketplace**, search for *Resource Queue Manager*, install or update, then restart Home Assistant. If necessary, add the repository URL:
+Open **Settings → Marketplace**, search for *Resource Queue Manager*, install or update the stable release, then restart Home Assistant. If necessary, add the repository URL:
 
 ```text
 https://github.com/HamzaKarfa/Resource-Queue-Manager
 ```
 
-Marketplace/HACS stable installs the latest published stable tag. **Until v1.1.0 is actually published as stable, the stable channel remains v1.0.0.** Do not expect the v1.1 settings to appear in that installation.
+Marketplace/HACS installs the latest published stable tag. To use the features on this page, select **v1.1.0 or later**. The previous **v1.0.0** does not include Weighted capacity, Backfill or recurrence counting.
 
-To test the release candidate, select the published [v1.1.0-rc.2 release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2) on a separate Home Assistant test installation. Do not mix files from different tags in `custom_components/resource_queue_manager/`. Back up Home Assistant and its `.storage` data before an upgrade; read [the migration and rollback guide](docs/MIGRATION_v1.0_to_v1.1.md).
+To evaluate older pre-release builds, the [v1.1.0-rc.2 release](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2) remains available for reference; use a separate Home Assistant test installation. Do not mix files from different tags in `custom_components/resource_queue_manager/`. Back up Home Assistant and its `.storage` data before an upgrade; read [the migration and rollback guide](docs/MIGRATION_v1.0_to_v1.1.md).
 
 ## Setup: create and configure a queue
 
@@ -243,9 +243,9 @@ This is an **illustrative event payload**, not a command. Values depend on the r
 - **From v0.4:** historical single FIFO configurations are supported; see [v0.4 → v1](docs/MIGRATION_v0.4_to_v1.md).
 - **Rollback:** restoring the previous code alone after using the new snapshot format is **not guaranteed**. Use a matching Home Assistant backup (code, entry configuration and `.storage` state).
 
-[Detailed v1.0 → v1.1 migration guide](docs/MIGRATION_v1.0_to_v1.1.md) · [Developer guide](docs/DEVELOPMENT.md) · [Release acceptance checklist](docs/RELEASE_CHECKLIST_v1.1.md) · [Draft v1.1.0 stable notes](docs/releases/v1.1.0-draft.md)
+[Detailed v1.0 → v1.1 migration guide](docs/MIGRATION_v1.0_to_v1.1.md) · [Developer guide](docs/DEVELOPMENT.md) · [Release acceptance checklist](docs/RELEASE_CHECKLIST_v1.1.md) · [v1.1.0 stable release notes](docs/releases/v1.1.0.md)
 
-The v1.1 release remains subject to final review, real Home Assistant migration/rollback tests and explicit publication approval. Do not infer stable availability from these prepared README files.
+Before upgrading production automations, make a full Home Assistant backup, verify the restored queue reservations and supervision states, and use an explicit `resume` after restarting. Automated CI does not replace a local backup/rollback rehearsal.
 
 ## License
 
