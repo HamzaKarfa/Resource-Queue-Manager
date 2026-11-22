@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from .capacity import DEFAULT_CAPACITY_MODE, get_capacity_policy
+from .recurrence import DEFAULT_RECURRENCE_MODE, get_recurrence_policy
 from .strategies import (
     DEFAULT_STRATEGY,
     QueueRequest,
@@ -37,6 +38,7 @@ class ResourceQueue:
         strategy: str = DEFAULT_STRATEGY,
         strategy_config: Mapping[str, object] | None = None,
         capacity_mode: str = DEFAULT_CAPACITY_MODE,
+        recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
     ) -> None:
         if (
             type(max_active) is not int
@@ -49,11 +51,14 @@ class ResourceQueue:
         self._strategy = get_strategy(strategy, self.strategy_config)
         self.capacity_mode = capacity_mode
         self._capacity_policy = get_capacity_policy(capacity_mode)
+        self.recurrence_mode = recurrence_mode
+        self._recurrence_policy = get_recurrence_policy(recurrence_mode)
         self._active: dict[str, None] = {}
         self._waiting: deque[str] = deque()
         self._requests: dict[str, QueueRequest] = {}
         # Effective costs are frozen when a request is created, including pending.
         self._effective_units: dict[str, int] = {}
+        self._occurrences: dict[str, int] = {}
 
     @classmethod
     def from_snapshot(
@@ -66,9 +71,13 @@ class ResourceQueue:
         request_data: object | None = None,
         capacity_mode: str = DEFAULT_CAPACITY_MODE,
         engine_request_data: object | None = None,
+        recurrence_mode: str = DEFAULT_RECURRENCE_MODE,
+        occurrence_counts: object | None = None,
     ) -> "ResourceQueue":
         """Restore grants and metadata exactly; never allocate while loading."""
-        instance = cls(max_active, strategy, strategy_config, capacity_mode)
+        instance = cls(
+            max_active, strategy, strategy_config, capacity_mode, recurrence_mode
+        )
         if not isinstance(active, list) or not isinstance(waiting, list):
             raise ValueError("stored active and waiting must be lists")
         combined = active + waiting
@@ -120,6 +129,23 @@ class ResourceQueue:
                     engine_data=stored, default_units=1, capacity=max_active
                 )
         instance._effective_units = effective
+        # Legacy snapshots have no recurrence fields; these are only valid
+        # under the default ignore policy, with one occurrence per resource.
+        if occurrence_counts is None:
+            if recurrence_mode != DEFAULT_RECURRENCE_MODE and combined:
+                raise ValueError("count-mode snapshot is missing occurrence counts")
+            counts = {resource_id: 1 for resource_id in combined}
+        else:
+            if not isinstance(occurrence_counts, dict):
+                raise ValueError("stored occurrence counts must be a mapping")
+            if set(occurrence_counts) != set(combined):
+                raise ValueError("saved occurrence counts disagree with queue")
+            counts = dict(occurrence_counts)
+            if any(type(count) is not int or count < 1 for count in counts.values()):
+                raise ValueError("saved occurrence counts must be positive integers")
+            if recurrence_mode == "ignore" and any(count != 1 for count in counts.values()):
+                raise ValueError("ignore-mode snapshot cannot contain repeated occurrences")
+        instance._occurrences = counts
         instance._capacity_policy.validate_restored(
             active_units=tuple(effective[resource_id] for resource_id in active),
             waiting_units=tuple(effective[resource_id] for resource_id in waiting),
@@ -158,6 +184,12 @@ class ResourceQueue:
                 raise ValueError(
                     f"Resource {resource_id!r} already has different request metadata"
                 )
+            # Duplicates are matched by resource_id. Only pending requests
+            # increment in count mode; active grants remain idempotent.
+            self._occurrences[resource_id] = self._recurrence_policy.on_duplicate(
+                pending=resource_id in self._waiting,
+                occurrences=self._occurrences[resource_id],
+            )
             return self._allocate()
 
         request = QueueRequest(resource_id, metadata)
@@ -169,6 +201,7 @@ class ResourceQueue:
             raise ValueError("Strategy failed to enqueue the resource")
         self._requests[resource_id] = request
         self._effective_units[resource_id] = weight
+        self._occurrences[resource_id] = 1
         return self._allocate()
 
     def release(self, resource_id: str) -> QueueResult:
@@ -181,6 +214,7 @@ class ResourceQueue:
             pass
         self._requests.pop(resource_id, None)
         self._effective_units.pop(resource_id, None)
+        self._occurrences.pop(resource_id, None)
         return self._allocate()
 
     def snapshot(self) -> QueueResult:
@@ -202,6 +236,14 @@ class ResourceQueue:
             resource_id: {"weight": weight}
             for resource_id, weight in self._effective_units.items()
         }
+
+    def export_occurrence_counts(self) -> dict[str, int]:
+        """Serialize one count per active or waiting resource."""
+        return dict(self._occurrences)
+
+    def occurrences(self, resource_id: str) -> int | None:
+        """Return the count currently attached to a pending/active request."""
+        return self._occurrences.get(resource_id)
 
     def effective_weight(self, resource_id: str) -> int | None:
         """Return the frozen cost of an active/pending request."""
