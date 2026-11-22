@@ -4,6 +4,10 @@
 
 ## Préversion v1.1.0-rc.2 — Backfill et configuration organisée
 
+**Autorisation de pré-release RC2 :** le mainteneur a demandé d'intégrer la refonte des paramètres à la prochaine candidate. La publication de `v1.1.0-rc.2` reste conditionnée aux contrôles CI du workflow dédié ; aucune validation manuelle n'est implicitement considérée comme réussie.
+
+
+
 La branche `release/v1.1.0-rc.2` regroupe les PR #28 (Backfill) et #30 (interface en quatre catégories) au-dessus de la pré-release précédente. La publication doit créer un **nouveau tag**, sans déplacer `v1.1.0-rc.1`, fusionner dans `main` ni marquer la candidate comme stable.
 
 - [ ] Vérifier les tests Python 3.13 et 3.14, Home Assistant 2026.11, HACS et hassfest **sur le commit final autorisant la RC2**.
