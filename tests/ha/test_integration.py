@@ -343,7 +343,7 @@ async def test_capacity_forms_use_number_box_not_slider(
         assert isinstance(selector, NumberSelector)
         assert selector.config["mode"] == "box"
         assert selector.config["min"] == 1
-        assert selector.config["max"] == 50
+        assert selector.config["max"] == 100000
         assert selector.config["step"] == 1
 
     options = await hass.config_entries.options.async_init(queue_entry.entry_id)
@@ -367,7 +367,7 @@ async def test_initial_setup_uses_number_box(hass: HomeAssistant) -> None:
     assert isinstance(selector, NumberSelector)
     assert selector.config["mode"] == "box"
     assert selector.config["min"] == 1
-    assert selector.config["max"] == 50
+    assert selector.config["max"] == 100000
 
 
 async def test_multi_instance_routes_and_isolates_fifo_lifo_queues(
