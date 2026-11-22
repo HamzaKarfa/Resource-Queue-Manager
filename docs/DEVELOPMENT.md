@@ -1,13 +1,14 @@
 # Development and integration testing
 
-This document covers the published v1.0 architecture and the **unreleased v1.1 development branches** for Home Assistant 2026.11+. Use the stable release tag for production and a complete feature branch on a separate test installation for v1.1.
+This document covers the **v1.1.0 stable-ready code** as included in the public **v1.1.0-rc.2 pre-release** for Home Assistant 2026.11+. Stable v1.0.0 remains the latest stable tag until a separately approved v1.1.0 release. Test the complete RC2 tag on a separate Home Assistant installation.
 
 ## Repository layout
 
 ```text
 custom_components/resource_queue_manager/
 ├── __init__.py            # HA lifecycle, services and persistence
-├── config_flow.py         # Multi-entry setup and options flows
+├── config_flow.py         # Guided multi-entry first setup
+├── options_sections.py    # Native four-category HA options menu/forms
 ├── const.py               # Integration constants
 ├── coordinator.py         # Entity binding, recovery and safety rules
 ├── engine.py              # Generic queue capacity and scheduling
@@ -15,7 +16,8 @@ custom_components/resource_queue_manager/
 ├── sensor.py              # Four sensors per entry, with v1.1 capacity and count attributes
 ├── services.yaml          # Common Home Assistant action schema
 ├── strategy_forms.py      # Provider settings -> native HA selectors
-├── capacity/              # Classic + weighted capacity providers
+├── allocation.py          # Strict / Backfill allocation mode
+├── capacity/              # Classic + Weighted capacity providers
 ├── recurrence/            # Ignore + count pending-duplicate providers
 ├── strings.json           # Canonical English UI definitions
 ├── translations/          # English/French translations
@@ -38,6 +40,7 @@ tests/
 ├── test_supervision.py
 ├── test_weighted_capacity.py
 ├── test_recurrence.py
+├── test_backfill_allocation.py
 ├── test_snapshot_migration_v11.py
 └── ha/                     # Integration tests incl. v1.1 contracts
 ```
@@ -56,7 +59,7 @@ Use **Python 3.14** for the pinned Home Assistant test fixture package, matching
 git clone https://github.com/HamzaKarfa/Resource-Queue-Manager.git
 cd Resource-Queue-Manager
 git fetch origin
-git switch docs/v1.1-regression-release-readiness  # unreleased development preview
+git switch --detach v1.1.0-rc.2  # published prerelease snapshot
 
 python3.14 -m venv .venv
 source .venv/bin/activate
@@ -84,7 +87,7 @@ strategies/my_algorithm/
 └── strategy.py
 ```
 
-1. Implement a pure-Python `QueueStrategy.enqueue(waiting, request, requests)` in `strategy.py`. The engine always grants from the **left** of the queue and controls concurrency, not physical entities. An algorithm must insert each new resource ID exactly once.
+1. Implement a pure-Python `QueueStrategy.enqueue(waiting, request, requests)` in `strategy.py`. The strategy determines waiting order; the engine applies **Strict** (stop at a blocked head) or **Backfill** (scan fitting requests behind the blocked head without reordering it). Neither strategy nor engine controls devices. Insert each new resource ID exactly once.
 2. In `config.py`, declare `CONFIG_FIELDS` as a tuple of `StrategyConfigField` objects. Leave it empty when there are no strategy-wide settings.
 3. In `request.py`, declare `REQUEST_FIELDS` for metadata supplied on **each request**. The host rejects unknown fields, invalid types and out-of-range numbers.
 4. In `provider.py`, define a class with `key`, `label`, `description`, `config_fields`, `request_fields` and `create(config)`. It must return a **fresh policy instance**, not a shared mutable singleton.
@@ -109,17 +112,18 @@ REQUEST_FIELDS = (
 
 **Boundaries:** strategies may rank or insert waiting requests. They may not bypass OFF confirmation, alter saved reservations directly, switch HA entities, preempt active reservations, register arbitrary services, or claim to provide electrical safety. Advanced policies needing time-based aging, scheduling callbacks, dynamic priorities, or different persistence need a reviewed extension of these contracts.
 
-## Capacity and recurrence extension contracts (v1.1 development)
+## Capacity, allocation and recurrence extension contracts (v1.1)
 
 - The capacity policy determines admission and restore-capacity validation, independently of FIFO/LIFO/Priority FIFO. Registered providers live in `capacity/registry.py`. `classic` consumes one slot; `weighted` consumes integer units with no second slot limit.
+- The independent `allocation_mode` field is validated by `allocation.py`: default `strict` stops at a blocked head; `backfill` scans later fitting requests in strategy order while preserving skipped requests. There is **no preemption, priority aging or starvation guarantee**.
 - The recurrence policy determines how duplicate **pending** `resource_id` requests are handled. Registered providers live in `recurrence/registry.py`; the default `ignore` does not increment, while `count` increments without modifying position, priority, effective weight or reservation count.
-- The engine owns immutable effective request weights, occurrence counts and ID-only active/waiting snapshots. Changes to capacity modes and recurrence policy must fail with nonempty queues.
+- The engine owns frozen effective request weights, occurrence counts and ID-only active/waiting snapshots. Changes to strategy, capacity mode, allocation mode or recurrence policy fail with nonempty queues.
 - Do not publish grant events until durable storage succeeds. `sensor.py` preserves the four original IDs and exposes capacity metrics and occurrence metadata.
 - New providers must have isolated pure-Python implementations and regression tests; there is no dynamic import of arbitrary user modules.
 
 ## Contract and backwards compatibility
 
-- The public request action accepts the standard `resource_id`, `entity_id`, optional `config_entry_id` and optional `strategy_data`. In **v1.1 development**, `engine_data` is also accepted and provider-validated (for example `engine_data.weight` in weighted mode).
+- The public request action accepts `resource_id`, `entity_id`, optional `config_entry_id`, optional `strategy_data` and optional provider-validated `engine_data` (e.g. `engine_data.weight` in Weighted mode).
 - In a multi-entry setup, all actions require `config_entry_id` and route to exactly one queue.
 - Every queue starts paused on setup/reload, and pending grants resume only after explicit verification.
 - A queue is not allowed to switch strategy/settings with active or waiting work.
@@ -137,6 +141,6 @@ python -m pip install "pytest-homeassistant==2026.11.1"
 python -m pytest -q tests/ha
 ```
 
-For the existing v1.0 release, the applicable version is `1.0.0`. For **unreleased v1.1**, see [the manual acceptance checklist](RELEASE_CHECKLIST_v1.1.md) and [migration guide](MIGRATION_v1.0_to_v1.1.md). Keep the manifest at `1.0.0` until an explicitly authorized v1.1 release commit. Validate a fresh v1.0 upgrade, two independent queues, weighted allocation, count-mode events, paused recovery and rollback on a separate HA test instance before publication. The separate release workflow requires a manual confirmation token and only runs on `main`; it does not trigger on PRs or merges.
+The published RC2 manifest is `1.1.0-rc.2` and **must not be mistaken for the planned stable version**. For stable v1.1, see [manual acceptance checklist](RELEASE_CHECKLIST_v1.1.md) and [migration guide](MIGRATION_v1.0_to_v1.1.md). Review the integration commit on `main`, pass all CI checks there, and validate migration, multiple queues, Weighted/Strict/Backfill, Count, pause/recovery and rollback on a separate real HA instance. Only then authorize the stable-specific manifest bump to `1.1.0` and create a guarded v1.1 release workflow. The existing `publish-v1.yml` workflow targets **v1.0.0 only**.
 
-See [migration steps](MIGRATION_v0.4_to_v1.md), [release notes](releases/v1.0.0.md), and the [manual acceptance checklist](RELEASE_CHECKLIST_v1.md).
+See [v0.4 → v1 migration](MIGRATION_v0.4_to_v1.md), [v1.0 → v1.1 migration](MIGRATION_v1.0_to_v1.1.md), [stable v1.1 draft notes](releases/v1.1.0-draft.md) and the [v1.1 acceptance checklist](RELEASE_CHECKLIST_v1.1.md).
