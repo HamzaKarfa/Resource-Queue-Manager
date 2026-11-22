@@ -2,11 +2,13 @@
 
 from .base import CapacityPolicy, CapacityProvider
 from .classic import ClassicCapacityProvider
+from .weighted import WeightedCapacityProvider
 
 DEFAULT_CAPACITY_MODE = "classic"
 
 CAPACITY_PROVIDERS: dict[str, CapacityProvider] = {
     "classic": ClassicCapacityProvider(),
+    "weighted": WeightedCapacityProvider(),
 }
 
 
