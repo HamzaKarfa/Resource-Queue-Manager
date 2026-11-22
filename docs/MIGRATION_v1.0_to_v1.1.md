@@ -1,6 +1,6 @@
 # Resource Queue Manager — Upgrade from v1.0.0 to v1.1.0
 
-**Stable release preparation:** this guide covers the upcoming **v1.1.0** and the published [v1.1.0-rc.2 test candidate](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2). At documentation-preparation time, **v1.0.0 is still the latest stable release**. Check the actual installed version before changing any configuration.
+This guide covers upgrading from **v1.0.0** to **v1.1.0 stable**. The previous [v1.1.0-rc.2 release candidate](https://github.com/HamzaKarfa/Resource-Queue-Manager/releases/tag/v1.1.0-rc.2) remains available as a historical test build. Verify the installed version before changing any configuration.
 
 ## Back up first
 
@@ -80,4 +80,4 @@ When changing the capacity limit, defaults that exceed the new budget require re
 
 ## Validation status
 
-Automated suites cover Python 3.13/3.14, Home Assistant 2026.11 fixtures, HACS and hassfest. The RC2 published commit passed these checks, but **a real-HA migration/rollback rehearsal remains a separate release gate**. Publication of the stable v1.1.0 tag requires explicit approval; these documentation edits do not publish it.
+Automated suites cover Python 3.13/3.14, Home Assistant 2026.11 fixtures, HACS and hassfest. The RC2 candidate passed these checks, and the guarded stable workflow repeats them on the exact PR #32 merge SHA. **A real-HA backup, migration and rollback rehearsal still requires manual verification**; the CI suite does not guarantee those operations on a production instance.
