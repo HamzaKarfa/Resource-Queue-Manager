@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   preflight:
-    if: github.event.head_commit.message == 'release: authorize v1.1.0-rc.1 prerelease'
+    if: >-
+      github.event.head_commit.message == 'release: authorize v1.1.0-rc.1 prerelease'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
