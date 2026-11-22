@@ -10,7 +10,7 @@
 
 > **Sécurité :** l'intégration ne commande jamais directement les relais. Tes automatisations décident d'allumer et d'éteindre les appareils après réservation. Ce logiciel n'est ni un délesteur électrique certifié, ni un système de protection thermique ; les sécurités matérielles restent indispensables.
 
-## Évolution v1.2 — attribution Backfill (non publiée)
+## Préversion v1.1.0-rc.2 — Backfill et nouvelle interface
 
 Un nouveau paramètre **Mode d'attribution** permet de choisir **Strict** (comportement actuel, par défaut) ou **Backfill**. En Backfill, si la première demande ne rentre pas dans les unités restantes, le moteur peut attribuer des demandes suivantes plus petites en conservant l'ordre relatif des demandes bloquées.
 
@@ -18,11 +18,11 @@ Exemple : capacité **15**, une ressource active utilise **10** ; une demande de
 
 Ce mode reste indépendant de FIFO/LIFO/FIFO prioritaire. Une demande moins prioritaire peut passer si la demande plus prioritaire ne rentre pas, avec **un risque de famine** pour les grosses demandes en cas d'arrivées répétées. Il n'y a ni préemption ni augmentation de capacité. Le changement de mode nécessite de vider la file. Les anciennes configurations restent en `strict`.
 
-**Cette fonctionnalité est encore sur une branche de développement et n'est pas dans `v1.1.0-rc.1`.** Voir [la documentation Backfill](docs/V1.2_BACKFILL.md).
+**Ces fonctions figurent dans la nouvelle candidate `v1.1.0-rc.2`, pas dans `v1.1.0-rc.1` ni dans la version stable `v1.0.0`.** Voir [la documentation Backfill](docs/V1.2_BACKFILL.md) et [la nouvelle interface de configuration](docs/CONFIGURATION_UI_v1.1-rc2.md) : quatre rubriques indépendantes et un assistant de création guidé.
 
 ## Aperçu de la v1.1 — candidate RC, non stable
 
-> La branche `release/v1.1.0-rc.1` réunit les fonctionnalités de la v1.1 pour les essais. Le manifeste porte la version `1.1.0-rc.1`, distincte de la version stable `1.0.0`. Lire les [notes de préversion](docs/releases/v1.1.0-rc.1.md) et [la procédure de migration](docs/MIGRATION_v1.0_to_v1.1.md) avant toute installation.
+> La branche `release/v1.1.0-rc.2` réunit les fonctionnalités de la v1.1 pour les essais. Le manifeste porte la version `1.1.0-rc.2`, distincte de la version stable `1.0.0`. Lire les [notes de préversion RC2](docs/releases/v1.1.0-rc.2.md) et [la procédure de migration](docs/MIGRATION_v1.0_to_v1.1.md) avant toute installation.
 
 
 La v1.1 sépare trois responsabilités indépendantes : **l'ordonnancement** (FIFO/LIFO/FIFO prioritaire), **la capacité** (places ou unités) et **le traitement des demandes répétées** (ignorées ou comptées).
@@ -46,7 +46,7 @@ data:
     weight: 25
 ```
 
-Le poids effectif reste figé pendant l'attente, l'exécution et après redémarrage. Seules les réservations actives consomment des unités. La file conserve un ordre strict : une petite demande ne peut pas dépasser la première demande en attente si celle-ci ne rentre pas dans la capacité restante.
+Le poids effectif reste figé pendant l'attente, l'exécution et après redémarrage. Seules les réservations actives consomment des unités. En mode **Strict** (par défaut), une petite demande ne dépasse pas celle qui bloque la tête de file. En mode **Backfill**, elle peut utiliser les unités restantes sans réordonner les demandes bloquées.
 
 En mode `count`, une demande démarre à `occurrences = 1`. Les répétitions avec le même `resource_id` **encore en attente** augmentent son compteur, sans dupliquer l'entrée, modifier son poids ni sa priorité. Les répétitions d'une demande déjà active sont ignorées. L'événement d'attribution fournit `occurrences`, `effective_weight` et `capacity_mode` ; les quatre capteurs existants conservent leurs identifiants et ajoutent les attributs de capacité, poids et récurrence.
 
